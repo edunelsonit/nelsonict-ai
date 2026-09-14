@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1525">
+<title>Nelsonict AI · Your knowledge, locally</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script>
+</head>
+<body>
+<div id="auth" class="auth-wrap">
+ <section class="auth-story"><a class="brand" href="/"><img src="/logo.svg" alt="">NELSONICT <b>AI</b></a>
+ <span class="eyebrow">YOUR KNOWLEDGE. YOUR COMPUTER.</span>
+ <h1>Big ideas.<br>Local intelligence.</h1>
+ <p>A private space to think, learn, and work with your documents.</p>
+ <div class="feature-strip"><span>Local GGUF models</span><span>PDF knowledge</span><span>SQLite storage</span></div>
+ <small>Built for Nelsonict Services Limited</small></section>
+ <section class="auth-card"><span class="eyebrow">WELCOME TO NELSONICT AI</span><h2 id="auth-title">Sign in</h2>
+ <p id="auth-description">Continue to your private AI workspace.</p>
+ <form id="auth-form">
+ <label id="setup-label" hidden>Setup token<input id="setup-token" autocomplete="off"><small>On the server, run: python -m app.cli setup-token</small></label>
+ <label>Username<input id="username" autocomplete="username" minlength="3" maxlength="64" required></label>
+ <label>Password<input id="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required></label>
+ <button class="primary" id="sign-in">Sign in →</button>
+ </form><p class="muted">Your administrator creates member accounts. No external AI account is required.</p>
+ </section>
+</div>
+<div id="workspace" hidden>
+ <aside class="sidebar">
+ <a class="brand" href="/"><img src="/logo.svg" alt="">NELSONICT <b>AI</b></a>
+ <button class="primary" id="new-chat">＋ New conversation</button>
+ <nav aria-label="Main navigation">
+ <button data-view="chat" class="active">◉ Chat</button><button data-view="knowledge">▤ Knowledge</button>
+ <button data-view="assistants">◇ Assistants</button><button data-view="models" data-admin>▧ Models</button>
+ <button data-view="settings">⚙ Settings & backup</button>
+ </nav>
+ <div class="sidebar-label">RECENT CONVERSATIONS</div><div id="conversation-list"></div>
+ <footer><div id="account"></div><button id="logout" class="quiet">Sign out</button></footer>
+ </aside>
+ <main>
+ <header class="topbar"><div><span class="eyebrow">NELSONICT WORKSPACE</span><h2 id="view-title">Chat</h2></div>
+ <div class="status-pills"><span id="model-pill">Model not loaded</span><span id="search-pill">Keyword search</span></div></header>
+ <section id="view-chat" class="view chat-view">
+ <div class="chat-controls">
+ <label>Assistant<select id="chat-assistant"><option value="">Nelsonict AI</option></select></label>
+ <label>Answer mode<select id="chat-mode"><option value="documents">Document answers</option><option value="general">General chat</option></select></label>
+ <label>Knowledge base<select id="chat-kb"><option value="">Select knowledge</option></select></label>
+ <button id="rename-chat" class="quiet">Rename</button><button id="export-chat" class="quiet">Export</button>
+ <button id="delete-chat" class="quiet danger">Delete</button>
+ </div>
+ <div id="messages" aria-live="polite">
+ <div class="empty-chat"><img src="/logo.svg" alt=""><span class="eyebrow">A LITTLE CURIOSITY GOES A LONG WAY</span>
+ <h1>What would you like to discover?</h1><p>Ask a question, explore an idea, or find an answer in your documents.</p>
+ <div class="suggestions"><button data-prompt="Summarise the main topics in these documents.">Summarise my documents ↗</button>
+ <button data-prompt="Explain the key ideas step by step.">Help me understand ↗</button>
+ <button data-prompt="What practical steps do these documents recommend?">Find practical steps ↗</button></div></div>
+ </div>
+ <form id="chat-form" class="composer"><textarea id="question" placeholder="Ask Nelsonict AI…" rows="2" maxlength="12000" required aria-label="Your message"></textarea>
+ <div><small id="chat-hint">Document answers include retrieved passages for you to verify.</small><button type="button" id="stop" hidden>Stop</button><button class="primary" id="send">Send ↑</button></div></form>
+ <p class="chat-footnote">AI can make mistakes. Check important answers against the original sources.</p>
+ </section>
+ <section id="view-knowledge" class="view" hidden>
+ <div class="section-heading"><div><h1>Build your knowledge library.</h1><p>Upload PDFs and give your assistant the context it needs.</p></div><button class="primary" id="new-kb">＋ Knowledge base</button></div>
+ <div class="knowledge-layout"><div id="knowledge-list" class="card"></div>
+ <div><div class="card upload-card"><span class="eyebrow">PDF KNOWLEDGE</span><h2 id="kb-title">Select a knowledge base</h2>
+ <p>Searchable PDFs and scanned documents. Processing runs in the background.</p>
+ <label class="upload-zone">＋ Choose PDF documents<input type="file" id="pdf-files" accept="application/pdf,.pdf" multiple></label>
+ <div class="row"><small id="worker-state">Checking PDF worker…</small><button id="delete-kb" class="quiet danger">Delete knowledge base</button></div>
+ </div><div id="document-list"></div></div></div>
+ </section>
+ <section id="view-assistants" class="view" hidden>
+ <div class="section-heading"><div><h1>An assistant for every task.</h1><p>Give each assistant a purpose and its own document collection.</p></div></div>
+ <div class="two-column"><form id="assistant-form" class="card">
+ <h2 id="assistant-form-title">Create assistant</h2><input type="hidden" id="assistant-id">
+ <label>Name<input id="assistant-name" maxlength="100" required placeholder="e.g. Nelsonict ICT Tutor"></label>
+ <label>Instructions<textarea id="assistant-instructions" rows="6" maxlength="3000" required>You are a helpful Nelsonict AI assistant. Explain clearly and acknowledge uncertainty.</textarea></label>
+ <label>Default knowledge base<select id="assistant-kb"></select></label>
+ <div class="row"><button class="primary">Save assistant</button><button type="button" id="assistant-reset" class="quiet">Clear</button></div>
+ </form><div id="assistant-list"></div></div>
+ </section>
+ <section id="view-models" class="view" hidden>
+ <div class="section-heading"><div><h1>Intelligence on your terms.</h1><p>Load a compatible instruction-tuned GGUF model from the server’s models folder.</p></div><button id="refresh-models">Refresh files</button></div>
+ <div class="two-column"><form id="model-form" class="card"><h2>Model configuration</h2>
+ <label>GGUF file<select id="model-file" required></select></label>
+ <div class="two-column"><label>Context tokens<input id="model-context" type="number" min="1024" max="32768" value="4096" required></label>
+ <label>CPU threads<input id="model-threads" type="number" min="1" max="128" value="4" required></label>
+ <label>GPU layers<input id="model-gpu" type="number" min="-1" max="200" value="0" required></label>
+ <label>Maximum response tokens<input id="model-tokens" type="number" min="64" max="2048" value="512" required></label></div>
+ <label>Temperature<input id="model-temperature" type="number" min="0" max="1.5" step="0.1" value="0.3" required></label>
+ <label>Chat format override<input id="model-format" placeholder="Leave empty to use GGUF metadata" maxlength="80"></label>
+ <div class="row"><button class="primary" id="load-model">Load model</button><button type="button" id="unload-model">Unload</button></div></form>
+ <div class="card"><span class="eyebrow">LOCAL INFERENCE</span><h2>One model. Your machine.</h2><p id="model-details">Checking model status…</p>
+ <p>Place your GGUF file in the configured models folder, then refresh. Models are never uploaded to a cloud service.</p>
+ <p>Start with CPU mode: GPU layers <b>0</b>. GPU acceleration requires a compatible build of llama-cpp-python.</p>
+ <p>Only one response runs at a time. Other requests receive a busy message. Stop an active response before switching models.</p>
+ <p>Model compatibility, memory use, and speed depend on your model and hardware.</p></div></div>
+ </section>
+ <section id="view-settings" class="view" hidden>
+ <div class="section-heading"><div><h1>Make yourself at home.</h1><p>Manage the workspace and keep a recoverable copy of your work.</p></div></div>
+ <div class="two-column"><div class="card"><h2>Appearance</h2><button id="theme-toggle">Switch light / dark</button><h2>System status</h2><p id="system-status"></p></div>
+ <div class="card" data-admin><h2>Backup & restore</h2><p>Download a consistent snapshot containing all user accounts, PDF originals, indexed knowledge, and conversations. Treat this archive as private.</p>
+ <a class="button primary" href="/api/backup">Download backup</a>
+ <details><summary>Restore on another computer</summary><p>Use the offline restore command in the README. Restore creates a new data folder, revokes sessions, and clears hardware-specific model loading settings.</p>
+ <p>After restoring, update the data/model paths and allowed hostnames in .env, then use Models to review CPU, GPU, and context settings. GGUF and embedding model files must be copied separately.</p></details></div>
+ </div>
+ <div class="card" data-admin><h2>User accounts</h2><form id="user-form" class="user-form">
+ <label>Username<input id="new-username" minlength="3" maxlength="64" required></label>
+ <label>Initial password<input id="new-password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label>
+ <label>Role<select id="new-role"><option value="member">Member</option><option value="admin">Administrator</option></select></label><button class="primary">Create user</button>
+ </form><div id="user-list"></div></div>
+ <p class="muted">Nelsonict AI 1.0 · Nelsonict Services Limited · GPL-3.0. Each user’s knowledge and conversations are private.</p>
+ </section>
+ </main>
+</div>
+<div id="toast" role="status" hidden></div>
+</body></html>

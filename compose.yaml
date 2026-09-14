@@ -1,0 +1,45 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        WITH_SEMANTIC: ${WITH_SEMANTIC:-false}
+    image: nelsonict-ai:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${NELSON_BIND_ADDRESS:-127.0.0.1}:${NELSON_PORT:-8000}:8000"
+    env_file: .env
+    environment:
+      NELSON_DATA_DIR: /app/data
+      NELSON_MODELS_DIR: /app/models
+    volumes:
+      - nelson_data:/app/data
+      - ./models:/app/models:ro
+      - ./embeddings:/app/embeddings:ro
+    security_opt:
+      - no-new-privileges:true
+  worker:
+    image: nelsonict-ai:local
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NELSON_DATA_DIR: /app/data
+      NELSON_MODELS_DIR: /app/models
+    command: ["python","-m","app.worker"]
+    volumes:
+      - nelson_data:/app/data
+      - ./embeddings:/app/embeddings:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import time; from app.db import get_setting; assert time.time()-get_setting('worker_heartbeat',0)<20"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  nelson_data:

@@ -1,0 +1,12 @@
+.git
+.env
+.venv
+__pycache__
+.pytest_cache
+data
+models
+embeddings
+backups
+*.gguf
+*.sqlite*
+*.zip

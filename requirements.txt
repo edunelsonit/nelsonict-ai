@@ -1,0 +1,9 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.20,<1
+pydantic-settings>=2.6,<3
+argon2-cffi>=23.1,<26
+httpx>=0.27,<1
+pypdf>=6.1,<7
+portalocker>=3.1,<4
+numpy>=1.26,<3

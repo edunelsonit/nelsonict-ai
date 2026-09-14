@@ -1,0 +1,14 @@
+[Unit]
+Description=Nelsonict AI web application
+After=network.target
+[Service]
+Type=simple
+User=nelsonict
+WorkingDirectory=/opt/nelsonict-ai
+EnvironmentFile=/opt/nelsonict-ai/.env
+ExecStart=/opt/nelsonict-ai/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Nelsonict AI PDF worker
+After=nelsonict-ai.service
+[Service]
+Type=simple
+User=nelsonict
+WorkingDirectory=/opt/nelsonict-ai
+EnvironmentFile=/opt/nelsonict-ai/.env
+ExecStart=/opt/nelsonict-ai/.venv/bin/python -m app.worker
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
