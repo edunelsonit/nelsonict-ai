@@ -252,6 +252,8 @@ Implementation uses FastAPI, SQLite directly, and a self-contained JavaScript fr
 
 ## Development and verification
 
+Initial publication status: GitHub accepted the source, but its first Actions run failed before either job executed any steps. No job logs were available through the integration. Python tests, container builds, and actual-model validation must therefore be treated as **unverified**, not passed. Check the latest Actions run before deployment.
+
 API documentation is at /docs. Mutations require a session cookie, X-Nelson-Client: web, and the X-CSRF-Token returned at login. PDF uploads use application/pdf bytes and a URL-encoded X-Filename header.
 
 ~~~bash

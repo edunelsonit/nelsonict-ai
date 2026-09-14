@@ -253,3 +253,10 @@ def test_static_interface_and_security_headers(client):
     assert result.status_code==200 and "Nelsonict AI" in result.text
     assert "script-src 'self'" in result.headers["content-security-policy"]
     assert client.get("/app.js").status_code==200
+
+
+def test_api_reference_is_local(client):
+    result=client.get("/docs")
+    assert result.status_code==200
+    assert "/api-docs.js" in result.text and "cdn.jsdelivr" not in result.text
+    assert client.get("/openapi.json").status_code==200

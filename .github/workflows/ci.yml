@@ -20,6 +20,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q app tests
       - run: node --check app/static/app.js
+      - run: node --check app/static/api-docs.js
       - run: python -m pytest -q
       - name: Check Compose configuration
         run: cp .env.example .env && docker compose config --quiet

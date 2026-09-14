@@ -63,7 +63,7 @@ async def lifespan(app):
         lock.release()
 
 
-app = FastAPI(title="Nelsonict AI", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Nelsonict AI", version="1.0.0", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts.split(","))
 
 
@@ -527,6 +527,11 @@ def backup(user=Depends(administrator)):
         raise
     return FileResponse(path, media_type="application/zip", filename="nelsonict-ai-backup.zip",
                         background=BackgroundTask(lambda: path.unlink(missing_ok=True)))
+
+
+@app.get("/docs", include_in_schema=False)
+def offline_docs():
+    return FileResponse(STATIC / "api.html")
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="frontend")
