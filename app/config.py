@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     max_pages: int = 300
     max_chunks: int = 10000
     index_timeout: int = 600
+    max_model_mb: int = 20480
+    max_summary_chunks: int = 256
     ocr_language: str = "eng"
 
     @property

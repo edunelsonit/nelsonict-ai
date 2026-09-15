@@ -90,7 +90,7 @@ class ModelRuntime:
         if used >= budget:
             raise ValueError("Message or assistant instructions exceed the model context. Shorten them.")
         for source in sources:
-            passage = f"\n[{source['id']}] {source['name']} page {source['page']}\n{source['text']}\n"
+            passage = f"\n[{source['id']}] {source['name']} {source.get('location') or 'page ' + str(source['page'])}\n{source['text']}\n"
             cost = tokens(passage) + 16
             if used + cost < budget:
                 system += passage

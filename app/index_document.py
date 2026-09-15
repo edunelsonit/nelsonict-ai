@@ -1,4 +1,4 @@
-"""One bounded subprocess per PDF, invoked by the durable worker."""
+"""One bounded subprocess per document, invoked by the durable worker."""
 import io
 import sys
 from pypdf import PdfReader
@@ -48,20 +48,29 @@ def extract_pages(pdf):
 
 
 def index_document(identifier):
-    row = db.one("SELECT pdf,kb_id FROM documents WHERE id=? AND status='processing'", (identifier,))
+    row = db.one("SELECT pdf,kb_id,format,name FROM documents WHERE id=? AND status='processing'", (identifier,))
     if not row:
         return
     parts = []
     total_pages = 0
-    for page, text, total in extract_pages(row["pdf"]):
+    if row['format'] == 'pdf':
+        units = ((page, text, f'Page {page}', total) for page, text, total in extract_pages(row['pdf']))
+    else:
+        from .formats import extract_units, validate
+        validate(row['pdf'], row['name'])
+        units = ((unit, text, location, 0) for unit, text, location in extract_units(row['pdf'], row['format']))
+    locations = []
+    for page, text, location, total in units:
         total_pages = total
-        parts.extend((page, chunk) for chunk in chunk_text(text))
+        extracted = chunk_text(text)
+        parts.extend((page, chunk) for chunk in extracted)
+        locations.extend([location] * len(extracted))
         if len(parts) > settings.max_chunks:
-            raise ValueError("PDF contains too many passages. Split it into smaller documents.")
+            raise ValueError("Document contains too many passages. Split it into smaller documents.")
         db.execute("UPDATE documents SET progress=?,pages=? WHERE id=?",
-                   (int(page / total * 75), total, identifier))
+                   (int(page / total * 75) if total else 50, total, identifier))
     if not parts:
-        raise ValueError("No readable text was found in this PDF.")
+        raise ValueError("No readable text was found in this document.")
     vectors = []
     identity = None
     for start in range(0, len(parts), 32):
@@ -77,8 +86,8 @@ def index_document(identifier):
         if existing + len(parts) > settings.max_chunks:
             raise ValueError("Knowledge base passage limit reached. Create another knowledge base.")
         conn.execute("DELETE FROM chunks WHERE document_id=?", (identifier,))
-        conn.executemany("INSERT INTO chunks(document_id,page,text,vector,embedding_id) VALUES(?,?,?,?,?)",
-                         [(identifier, page, text, vectors[i], identity) for i, (page, text) in enumerate(parts)])
+        conn.executemany("INSERT INTO chunks(document_id,page,text,vector,embedding_id,location) VALUES(?,?,?,?,?,?)",
+                         [(identifier, page, text, vectors[i], identity, locations[i]) for i, (page, text) in enumerate(parts)])
         conn.execute("UPDATE documents SET status='ready',progress=100,error=NULL,pages=? WHERE id=?",
                      (total_pages, identifier))
 

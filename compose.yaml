@@ -15,7 +15,7 @@ services:
       NELSON_MODELS_DIR: /app/models
     volumes:
       - nelson_data:/app/data
-      - ./models:/app/models:ro
+      - ./models:/app/models
       - ./embeddings:/app/embeddings:ro
     security_opt:
       - no-new-privileges:true

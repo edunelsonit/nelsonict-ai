@@ -49,12 +49,13 @@ function selectOptions(id, items, placeholder) {
 function showView(view) {
   document.querySelectorAll(".view").forEach(el => el.hidden = el.id !== "view-" + view);
   document.querySelectorAll("[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
-  $("view-title").textContent = {chat:"Chat",knowledge:"Knowledge",assistants:"Assistants",models:"Models",settings:"Settings & backup"}[view];
+  $("view-title").textContent = {chat:"Chat",knowledge:"Knowledge",assistants:"Assistants",models:"Models",settings:"Settings & backup",wizard:"Setup wizard"}[view];
 }
 document.querySelectorAll("[data-view]").forEach(el => el.addEventListener("click", async () => {
   showView(el.dataset.view);
   try {
-    if(el.dataset.view === "models") await refreshModels();
+    if(el.dataset.view === "models") {await refreshModels();await refreshProfiles();}
+    if(el.dataset.view === "wizard") await refreshWizard();
     if(el.dataset.view === "settings" && state.user.role === "admin") await refreshUsers();
   } catch(e) { notify(e.message); }
 }));
@@ -69,9 +70,9 @@ function renderSources(container, sources) {
   details.append(node("summary", sources.length + " source passages"));
   sources.forEach(source => {
     const card = node("div", undefined, "source-card");
-    const link = node("a", "[" + source.id + "] " + source.name + " · page " + source.page);
+    const link = node("a", "[" + source.id + "] " + source.name + " · " + (source.location || "page " + source.page));
     link.href = "/api/documents/" + source.document_id + "/download";
-    card.append(link, node("p", source.text));
+    card.append(button("Preview source", () => openPreview(source)), link, node("p", source.text));
     details.append(card);
   });
   container.append(details);
@@ -81,6 +82,7 @@ function message(role, content, sources=[], status="complete") {
   article.append(node("div", role === "user" ? "YOU" : "NELSONICT AI", "message-label"));
   const text = node("div", content, "message-text");
   article.append(text);
+  if (sources.length) renderCitedText(text, content, sources);
   renderSources(article, sources);
   if (status !== "complete" && status !== "generating") article.append(node("small", status, "muted"));
   $("messages").append(article);
@@ -94,6 +96,7 @@ async function openConversation(id) {
   $("chat-assistant").disabled = true;
   const assistant = state.assistants.find(x => x.id === convo?.assistant_id);
   if (assistant?.kb_id) $("chat-kb").value = assistant.kb_id;
+  await refreshChatDocuments();
   const rows = await api("/conversations/" + id + "/messages");
   $("messages").replaceChildren();
   rows.forEach(row => message(row.role, row.content, row.sources, row.status));
@@ -110,7 +113,7 @@ async function refreshLists() {
   selectOptions("chat-assistant",state.assistants,"Nelsonict AI");
   $("knowledge-list").replaceChildren(node("h3","Knowledge bases"));
   if (!state.knowledge.length) $("knowledge-list").append(node("p","Create a knowledge base to get started.","muted"));
-  state.knowledge.forEach(k => $("knowledge-list").append(button(k.name + " · " + k.documents, () => chooseKnowledge(k.id),
+  state.knowledge.forEach(k => $("knowledge-list").append(button(k.name + " · " + k.documents + " · " + k.permission, () => chooseKnowledge(k.id),
     "knowledge-link" + (state.kb === k.id ? " selected" : ""))));
   $("assistant-list").replaceChildren();
   state.assistants.forEach(a => {
@@ -133,21 +136,26 @@ async function refreshLists() {
 async function chooseKnowledge(id) {
   state.kb=id; $("kb-title").textContent=state.knowledge.find(x=>x.id===id)?.name || "Knowledge base";
   await refreshDocuments();
+  await refreshSharing();
 }
 async function refreshDocuments() {
   if(!state.kb) return;
+  const permission=state.knowledge.find(x=>x.id===state.kb)?.permission;
+  $("pdf-files").disabled=permission==="reader";
+  $("delete-kb").hidden=permission!=="owner";
   const docs=await api("/knowledge/"+state.kb+"/documents");
   $("document-list").replaceChildren();
-  if(!docs.length) $("document-list").append(node("p","No PDFs yet. Choose files above to build this knowledge base.","muted"));
+  if(!docs.length) $("document-list").append(node("p","No documents yet. Choose files above to build this knowledge base.","muted"));
   docs.forEach(d=>{
     const card=node("div",undefined,"card document");
     card.append(node("h3",d.name),node("span",d.status+" · "+d.progress+"%","badge"),
-      node("p",d.pages+" pages · "+(d.size/1048576).toFixed(1)+" MB","muted"));
+      node("p",(d.format==="pdf" ? d.pages+" pages" : d.format.toUpperCase())+" · "+(d.size/1048576).toFixed(1)+" MB","muted"));
     if(d.error) card.append(node("p",d.error,"error-text"));
     const row=node("div",undefined,"row");
     const download=node("a","Download","button quiet"); download.href="/api/documents/"+d.id+"/download";
-    row.append(download,button("Reindex",async()=>{await api("/documents/"+d.id+"/reindex",{method:"POST"});await refreshDocuments();}),
-      button("Delete",async()=>{
+    row.append(download,button("Preview",()=>openPreview({document_id:d.id,name:d.name,page:1,format:d.format})));
+    if(permission!=="reader") row.append(button("Reindex",async()=>{await api("/documents/"+d.id+"/reindex",{method:"POST"});await refreshDocuments();}));
+    if(permission==="owner") row.append(button("Delete",async()=>{
         if(!confirm("Delete this document and its searchable passages?")) return;
         await api("/documents/"+d.id,{method:"DELETE"});await refreshDocuments();await refreshLists();
       },"quiet danger"));
@@ -193,6 +201,7 @@ async function enter(user) {
   $("auth").hidden=true; $("workspace").hidden=false; $("account").textContent=user.username+" · "+user.role;
   document.querySelectorAll("[data-admin]").forEach(el=>el.hidden=user.role!=="admin");
   await refreshLists(); await refreshStatus();
+  if (user.role === "admin") { const report=await refreshWizard(); if(!report.wizard_complete) showView("wizard"); }
 }
 on("auth-form","submit",async e=>{
   e.preventDefault(); $("sign-in").disabled=true;
@@ -232,7 +241,7 @@ on("chat-form","submit",async e=>{
     }
     const response=await fetch("/api/conversations/"+state.conversation+"/chat",{
       method:"POST",headers:{"Content-Type":"application/json","X-Nelson-Client":"web","X-CSRF-Token":state.csrf},
-      body:JSON.stringify({content,mode,kb_id})
+      body:JSON.stringify({content,mode,kb_id,task:$("chat-task").value,document_ids:Array.from($("chat-documents").selectedOptions).map(x=>Number(x.value))})
     });
     if(!response.ok) throw new Error(errorText(await response.json()));
     $("question").value=""; message("user",content);
@@ -250,6 +259,7 @@ on("chat-form","submit",async e=>{
         if(event.type==="token") output.text.textContent+=event.text;
         if(event.type==="sources") renderSources(output.article,event.sources);
         if(event.type==="error") notify(event.message);
+        if(event.type==="progress") $("chat-hint").textContent=event.message;
       }
       $("messages").scrollTop=$("messages").scrollHeight;
     }
@@ -287,9 +297,9 @@ on("pdf-files","change",async()=>{
   try {
     for(const file of files) {
       notify("Uploading "+file.name+"…");
-      await api("/knowledge/"+state.kb+"/documents",{method:"POST",headers:{"Content-Type":"application/pdf","X-Filename":encodeURIComponent(file.name)},body:file});
+      await api("/knowledge/"+state.kb+"/documents",{method:"POST",headers:{"Content-Type":file.type||"application/octet-stream","X-Filename":encodeURIComponent(file.name)},body:file});
     }
-    notify("PDFs queued for indexing.");await refreshDocuments();await refreshLists();
+    notify("Documents queued for indexing.");await refreshDocuments();await refreshLists();
   } finally {$("pdf-files").disabled=false;$("pdf-files").value="";}
 });
 on("assistant-form","submit",async e=>{
@@ -308,7 +318,7 @@ on("model-form","submit",async e=>{
     await api("/models/load",{method:"POST",body:{filename:$("model-file").value,context:Number($("model-context").value),
       threads:Number($("model-threads").value),gpu_layers:Number($("model-gpu").value),max_tokens:Number($("model-tokens").value),
       temperature:Number($("model-temperature").value),chat_format:$("model-format").value||null}});
-    notify("Model loaded.");await refreshModels();await refreshStatus();
+    notify("Model loaded.");await refreshModels();await refreshStatus();await refreshWizard();
   } finally {$("load-model").disabled=false;}
 });
 on("unload-model","click",async()=>{await api("/models/unload",{method:"POST"});await refreshModels();await refreshStatus();});
@@ -337,3 +347,139 @@ setInterval(async()=>{
   if(!state.user) return;
   try {await refreshStatus();if(!$("view-knowledge").hidden) await refreshDocuments();} catch { /* Retry next interval. */ }
 },5000);
+
+// Nelsonict AI 1.1: guided setup, model imports, profiles and team collections.
+let modelProfiles=[], machineReport=null, modelUpload=null, previewSource=null, previewURL=null;
+function modelFormConfig() {
+  return {filename:$("model-file").value,context:Number($("model-context").value),threads:Number($("model-threads").value),
+    gpu_layers:Number($("model-gpu").value),max_tokens:Number($("model-tokens").value),
+    temperature:Number($("model-temperature").value),chat_format:$("model-format").value||null};
+}
+async function refreshProfiles() {
+  modelProfiles=await api('/model-profiles');
+  $("profile-list").replaceChildren(new Option('Select a saved profile',''));
+  modelProfiles.forEach(p=>$("profile-list").add(new Option(p.name,p.id)));
+}
+async function refreshWizard() {
+  machineReport=await api('/system/check');
+  const r=machineReport, box=$("machine-report");box.replaceChildren();
+  box.append(node('p',r.os+' · '+r.cpu+' · '+r.cores+' logical cores'));
+  box.append(node('p',(r.ram_available/1073741824).toFixed(1)+' GB available / '+(r.ram_total/1073741824).toFixed(1)+' GB RAM'));
+  box.append(node('p',(r.disk_free/1073741824).toFixed(1)+' GB free model storage · '+(r.models_writable?'writable':'folder needs write permission')));
+  box.append(node('p',r.nvidia_devices.length?'NVIDIA: '+r.nvidia_devices.join('; '):r.apple_silicon?'Apple Silicon detected; Metal requires a compatible inference build.':'No NVIDIA device reported. CPU mode is the starting option.'));
+  const list=node('ul');
+  Object.entries(r.dependencies).forEach(([name,available])=>list.append(node('li',(available?'✓ ':'○ ')+name+(available?' installed':' missing / optional'))));
+  box.append(node('p','Inference GPU backend: '+(r.inference_backend.gpu_offload?'available':'not detected')+(r.inference_backend.error?' · '+r.inference_backend.error:'')));
+  const help=node('details');help.append(node('summary','Dependency installation guidance'));
+  Object.entries(r.installation_help).forEach(([name,command])=>help.append(node('p',name+': '+command)));box.append(help);
+  box.append(list,node('p','Document worker: '+(r.worker_online?'online':'offline — start the worker')),node('p',r.model_guidance));
+  return r;
+}
+on('wizard-refresh','click',refreshWizard);
+on('wizard-models','click',async()=>{showView('models');await refreshModels();await refreshProfiles();});
+on('wizard-knowledge','click',()=>showView('knowledge'));
+on('apply-recommendations','click',()=>{
+  if(!machineReport)return;
+  $("model-context").value=machineReport.recommended.context;$("model-threads").value=machineReport.recommended.threads;$("model-gpu").value=0;
+  showView('models');notify('Suggested CPU settings applied. Select a model, then load it.');
+});
+on('wizard-test','click',async()=>{
+  $("wizard-test").disabled=true;$("wizard-test-result").textContent='Generating locally…';
+  try { const result=await api('/system/model-test',{method:'POST'});$("wizard-test-result").textContent=result.response+'\n\n'+result.note; }
+  finally {$("wizard-test").disabled=false;}
+});
+on('wizard-complete','click',async()=>{await api('/system/complete',{method:'POST'});notify('Setup complete.');showView('chat');});
+on('save-profile','click',async()=>{
+  await api('/model-profiles',{method:'POST',body:{name:$("profile-name").value,config:modelFormConfig()}});
+  await refreshProfiles();notify('Profile saved.');
+});
+on('use-profile','click',()=>{
+  const p=modelProfiles.find(x=>x.id===Number($("profile-list").value));if(!p)return;
+  $("model-file").value=p.config.filename;
+  for(const [id,key] of [['context','context'],['threads','threads'],['gpu','gpu_layers'],['tokens','max_tokens'],['temperature','temperature'],['format','chat_format']]) $("model-"+id).value=p.config[key]??'';
+  notify('Profile applied to the form. Click Load model to activate it.');
+});
+on('delete-profile','click',async()=>{
+  const id=$("profile-list").value;if(!id||!confirm('Delete this saved profile?'))return;
+  await api('/model-profiles/'+id,{method:'DELETE'});await refreshProfiles();
+});
+on('inspect-model','click',async()=>{
+  $("model-inspection").textContent='Reading GGUF metadata and calculating SHA-256…';
+  const r=await api('/models/inspect?filename='+encodeURIComponent($("model-file").value));
+  $("model-inspection").textContent=JSON.stringify(r,null,2);
+});
+on('model-import-form','submit',async e=>{
+  e.preventDefault();if(modelUpload)return;
+  const file=$("model-import-file").files[0];if(!file)return;
+  $("import-model").disabled=true;$("model-upload-progress").value=0;
+  try {
+    const result=await new Promise((resolve,reject)=>{
+      const xhr=new XMLHttpRequest();modelUpload=xhr;
+      xhr.open('POST','/api/models/import');
+      xhr.setRequestHeader('X-Nelson-Client','web');xhr.setRequestHeader('X-CSRF-Token',state.csrf);
+      xhr.setRequestHeader('X-Filename',encodeURIComponent(file.name));xhr.setRequestHeader('Content-Type','application/octet-stream');
+      if($("model-sha").value)xhr.setRequestHeader('X-SHA256',$("model-sha").value.trim());
+      xhr.upload.onprogress=event=>{if(event.lengthComputable){const value=Math.round(event.loaded/event.total*100);$("model-upload-progress").value=value;$("import-status").textContent=value===100?'Upload sent. Validating file…':'Uploading '+value+'%';}};
+      xhr.onerror=()=>reject(new Error('Upload failed. Check the connection and proxy upload limit.'));
+      xhr.onabort=()=>reject(new Error('Upload cancelled.'));
+      xhr.onload=()=>{let data;try{data=JSON.parse(xhr.responseText);}catch{reject(new Error('Server rejected upload; check proxy limits.'));return;}if(xhr.status>=200&&xhr.status<300)resolve(data);else reject(new Error(errorText(data)));};
+      xhr.send(file);
+    });
+    $("import-status").textContent='Imported '+result.filename+'. SHA-256: '+result.sha256+(result.checksum_verified?' · matches expected checksum':' · no expected checksum supplied');
+    await refreshModels();await refreshWizard();
+  } finally {modelUpload=null;$("import-model").disabled=false;}
+});
+on('cancel-import','click',()=>{if(modelUpload)modelUpload.abort();});
+async function refreshSharing() {
+  const kb=state.knowledge.find(x=>x.id===state.kb);
+  $("sharing-card").hidden=!kb||kb.permission!=='owner';
+  if($("sharing-card").hidden)return;
+  const members=await api('/knowledge/'+state.kb+'/members');$("member-list").replaceChildren();
+  members.forEach(m=>{
+    const row=node('div',undefined,'user-row');row.append(node('span',m.username+' · '+m.permission),button('Revoke',async()=>{
+      if(!confirm('Revoke access for '+m.username+'? Their historical chat excerpts remain.'))return;
+      await api('/knowledge/'+state.kb+'/members/'+m.id,{method:'DELETE'});await refreshSharing();
+    }));$("member-list").append(row);
+  });
+}
+on('share-form','submit',async e=>{
+  e.preventDefault();await api('/knowledge/'+state.kb+'/members',{method:'POST',body:{username:$("share-username").value,permission:$("share-permission").value}});
+  await refreshSharing();notify('Collection access updated.');
+});
+async function refreshChatDocuments() {
+  const kb=Number($("chat-kb").value)||state.assistants.find(x=>x.id===Number($("chat-assistant").value))?.kb_id;
+  const selected=new Set(Array.from($("chat-documents").selectedOptions).map(x=>x.value));
+  $("chat-documents").replaceChildren();if(!kb)return;
+  const docs=await api('/knowledge/'+kb+'/documents');
+  docs.filter(x=>x.status==='ready').forEach(d=>{const option=new Option(d.name,d.id);option.selected=selected.has(String(d.id));$("chat-documents").add(option);});
+}
+on('chat-kb','change',refreshChatDocuments);
+on('chat-assistant','change',refreshChatDocuments);
+on('chat-task','change',()=>{
+  if($("chat-task").value!=='question'){$("chat-mode").value='documents';$("chat-kb").disabled=false;}
+  $("chat-hint").textContent=$("chat-task").value==='question'?'Follow-up questions use earlier questions for context; sources are retrieved again.':'Select documents above. All indexed passages are processed; large analyses can take several minutes.';
+});
+function renderCitedText(element,text,sources) {
+  const pattern=/\[(S\d+)\]/g;let cursor=0;let match;element.replaceChildren();
+  while((match=pattern.exec(text))){element.append(document.createTextNode(text.slice(cursor,match.index)));
+    const source=sources.find(x=>x.id===match[1]);
+    element.append(source?button(match[0],()=>openPreview(source),'citation'):document.createTextNode(match[0]));cursor=pattern.lastIndex;}
+  element.append(document.createTextNode(text.slice(cursor)));
+}
+async function openPreview(source) {
+  previewSource=source;$("preview-title").textContent=source.name;$("preview-page").value=source.page||1;
+  $("preview-download").href='/api/documents/'+source.document_id+'/download';
+  if(!$("source-preview").open)$("source-preview").showModal();await loadPreview();
+}
+async function loadPreview() {
+  if(!previewSource)return;const box=$("preview-content");box.replaceChildren(node('p','Loading source…'));
+  if(previewURL){URL.revokeObjectURL(previewURL);previewURL=null;}
+  const r=await fetch('/api/documents/'+previewSource.document_id+'/preview?page='+Number($("preview-page").value));
+  if(!r.ok){const error=await r.json();box.replaceChildren(node('p',errorText(error)));return;}
+  box.replaceChildren();
+  if(r.headers.get('content-type').includes('image/')){previewURL=URL.createObjectURL(await r.blob());const img=node('img');img.src=previewURL;img.alt=previewSource.name+' page '+$("preview-page").value;box.append(img);}
+  else {const data=await r.json();box.append(node('h3',data.location),node('pre',data.text,'message-text'));}
+}
+on('preview-go','click',loadPreview);
+on('close-preview','click',()=>$("source-preview").close());
+on('source-preview','close',()=>{if(previewURL)URL.revokeObjectURL(previewURL);previewURL=null;});

@@ -39,7 +39,7 @@ def run():
                     time.sleep(2)
                 row = db.one("SELECT status FROM documents WHERE id=?", (identifier,))
                 if row and row["status"] == "processing":
-                    db.execute("UPDATE documents SET status='failed',error='PDF processor exited unexpectedly.' WHERE id=?",
+                    db.execute("UPDATE documents SET status='failed',error='Document processor exited unexpectedly.' WHERE id=?",
                                (identifier,))
             finally:
                 if process.poll() is None:

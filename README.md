@@ -1,6 +1,6 @@
-# Nelsonict AI
+# Nelsonict AI 1.1
 
-**A private, deployable chatbot for Nelsonict Services Limited.** Run a compatible GGUF language model on your own computer or server, upload PDF knowledge, and keep accounts, conversations, original PDFs, extracted passages, and embeddings in SQLite.
+**A private, deployable chatbot for Nelsonict Services Limited.** Run a compatible GGUF language model on your own computer or server, upload document knowledge, and keep accounts, conversations, original documents, extracted passages, and embeddings in SQLite.
 
 [![Application checks](https://github.com/edunelsonit/nelsonict-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/edunelsonit/nelsonict-ai/actions/workflows/ci.yml)
 
@@ -8,11 +8,13 @@
 
 - Responsive browser interface with light/dark themes; no frontend build or CDN dependency.
 - Administrator and member accounts, Argon2 passwords, HTTP-only sessions, CSRF checks, login throttling.
-- Private knowledge bases and configurable assistants for each user.
+- Setup wizard with RAM/CPU/GPU/dependency checks and a local model test.
+- Private knowledge bases with explicit reader/editor sharing and personal assistants.
+- GGUF browser import with SHA-256 verification and saved model profiles.
 - Local GGUF loading/unloading, CPU/GPU/context controls through llama-cpp-python.
 - Streaming responses, stop generation, persistent history, rename, delete, and JSON export.
-- Document answers with source passages, document names, and physical PDF page numbers.
-- PDF ingestion, optional OCR, a persistent processing queue, progress, errors, and reindexing.
+- Follow-up questions, full-document summaries, comparisons, and clickable source previews.
+- PDF, DOCX, TXT, Markdown, CSV and XLSX ingestion, plus optional PDF OCR and a durable processing queue.
 - SQLite FTS5 keyword retrieval; optional local semantic embeddings and hybrid search.
 - Downloadable consistent backups and offline restore into a new data directory.
 - Native installation, Docker Compose, Caddy/systemd examples, and automated tests.
@@ -38,10 +40,10 @@ The build compiles the native inference dependency and can take several minutes.
 1. Open **http://localhost:8000**.
 2. Paste the setup token printed by the final command.
 3. Create an administrator username and password of at least 12 characters.
-4. Copy a compatible **instruction/chat GGUF model** to the host's **models** folder.
+4. Use **Setup wizard** to check dependencies, then **Models → Import a GGUF file** (or copy one to the host models folder).
 5. Open **Models → Refresh files**, select it, and click **Load model**.
 6. Start with **4096 context**, **4 CPU threads**, **0 GPU layers**, and **512 response tokens**. Lower settings if memory is limited.
-7. Open **Knowledge**, create a knowledge base, and upload a PDF.
+7. Run the wizard’s local model test, then open **Knowledge**, create a collection, and upload a supported document.
 8. Wait for **Ready**, then choose **Document answers** and that knowledge base in Chat.
 
 For questions without documents, choose **General chat**.
@@ -104,11 +106,21 @@ On macOS, install Python, CMake, and Tesseract, then follow the native Python co
 
 Upstream installation: [llama-cpp-python](https://llama-cpp-python.readthedocs.io/en/latest/).
 
+## Upgrading from 1.0
+
+Back up and stop the old API/worker, pull this release, install the updated requirements (or rebuild Docker), then restart. Schema v1 migrates transactionally to v2; existing PDF files, accounts, chats and embeddings are retained. Do not run old code against a migrated database. Retain your pre-upgrade backup for rollback. The restore command accepts both schema versions.
+
+See [the 1.1 upgrade guide](docs/UPGRADE-1.1.md) for new controls and migration details.
+
 ## GGUF models and hardware
 
 The operator supplies model files. Choose a model supported by the installed inference version and check its own licence and chat-template requirements.
 
 - Only local GGUF files inside NELSON_MODELS_DIR appear in the picker.
+- Administrators can stream-import GGUF files up to NELSON_MAX_MODEL_MB (20,480 MB default). Files are staged, metadata checked, and atomically installed without overwriting an existing filename.
+- Paste a publisher SHA-256 to verify the upload, or calculate a checksum through Inspect file. A checksum does not establish model trustworthiness.
+- Saved profiles retain model filename, context, threads, GPU layers, response tokens, temperature and chat format. Apply a profile to the form, then click Load model.
+- Docker's models mount is now writable for imports. The host directory must permit container UID 10001 to write; copying models manually remains available.
 - Users cannot provide arbitrary model paths or download URLs.
 - Leave chat format blank to use GGUF metadata; override only when the model requires it.
 - Saved configuration reloads on startup. Load errors appear in Models.
@@ -123,22 +135,42 @@ The operator supplies model files. Choose a model supported by the installed inf
 
 Inference runs on the **host computer/server**, not the visitor's browser.
 
-## PDF knowledge
+## Document knowledge
 
-Each user owns their assistants, knowledge bases, and conversations. This release provides **private user libraries**, without cross-user sharing or team workspace permissions. Administrators manage accounts and installation settings. Administrators/server operators can access full backups and database files.
+Conversations and assistants remain personal. Collections are private by default. Their owner can grant access to existing accounts through **Knowledge → Share this knowledge base**:
+
+| Role | Ask/search/download/preview | Upload/reindex | Delete documents/collection | Manage sharing |
+|---|---|---|---|---|
+| Reader | Yes | No | No | No |
+| Editor | Yes | Yes | No | No |
+| Owner | Yes | Yes | Yes | Yes |
+
+Editor uploads count against the collection owner's storage quota. Revoking access blocks new retrieval and source downloads and cancels that user's active generation. Historical chat excerpts already received remain in that user's chat history. Administrators manage accounts and server settings; full backups contain all users' data.
 
 Processing:
-1. Validate/limit PDF bytes and save the original and checksum in SQLite.
-2. Claim the durable queue entry and start a time-limited PDF subprocess.
+1. Validate/limit document bytes and save the original and checksum in SQLite.
+2. Claim the durable queue entry and start a time-limited document subprocess.
 3. Extract text by page and attempt OCR on pages containing very little text.
 4. Divide text into bounded overlapping passages and generate optional embeddings.
 5. Publish all passages in one transaction after indexing succeeds.
 
-Defaults: **25 MB/PDF, 250 MB original PDFs/user, 300 pages/PDF, 10,000 passages/knowledge base, 600 seconds/indexing job**. Text, embeddings, and chats consume additional disk space beyond the PDF quota.
+Defaults: **25 MB/document, 250 MB original documents/collection owner, 300 pages/PDF, 10,000 passages/knowledge base, 600 seconds/indexing job**. Text, embeddings, and chats consume additional disk space beyond the original-file quota.
 
-Document states are queued, processing, ready, and failed. Interrupted jobs are requeued when the worker restarts. Reindexing hides old passages until ready. Deleting a document removes its PDF and searchable passages; historical conversation excerpts remain.
+Document states are queued, processing, ready, and failed. Interrupted jobs are requeued when the worker restarts. Reindexing hides old passages until ready. Deleting a document removes its original file and searchable passages; historical conversation excerpts remain.
 
 OCR requires requirements-ocr.txt, Tesseract, and the selected language pack. Docker includes English. Set NELSON_OCR_LANGUAGE after installing another language pack. Blank/mixed-layout PDFs may need manual preparation. Unlock password-protected PDFs before uploading.
+
+### Format details
+
+| Format | Extracted information | Source location |
+|---|---|---|
+| PDF | Text and optional OCR | Physical page |
+| DOCX | Main-body paragraphs and top-level tables | Paragraph/table block |
+| TXT / MD | UTF-8 text | Line range |
+| CSV | UTF-8 rows with header labels | CSV row |
+| XLSX | Stored/cached cell values, sheet labels | Sheet and row |
+
+Legacy DOC/XLS must be converted first. XLSX formulas are not calculated; save a recalculated workbook or export CSV. Images, Word tracked changes, nested tables, headers/footers and arbitrary embedded objects are not comprehensively extracted. Office archives are limited to 100 MB unpacked; tabular extraction is bounded to 50,000 rows and 200 columns. No macros or formula code is executed.
 
 ## Optional semantic search
 
@@ -178,7 +210,11 @@ Float32 vectors stay in SQLite. Retrieval selects only the user's chosen ready k
 
 ## Answer quality
 
-Document mode requires a self-contained question. Previous conversation turns are not used as evidence; restate the subject in follow-up questions.
+**Ask / follow up** includes the last two user questions from the same collection as context and retrieves evidence again. Old model answers and old source identifiers are not reused as evidence. If a pronoun is ambiguous, restate its subject.
+
+**Full summary** processes every indexed passage in the selected documents through map/reduce, then writes a final answer. **Compare documents** requires at least two ready documents and covers both before comparing. Select files using the multiple-selection control (Ctrl/⌘ on desktop). Progress appears above the chat box. The default full-analysis limit is 256 passages across at most 8 documents and 15 minutes of cooperative analysis time. Oversized requests fail explicitly; sources are not silently sampled. Very small model contexts may be unable to combine intermediate notes.
+
+Click a citation or **Preview source** to open a PDF page image or extracted non-PDF source unit. PDF rendering requires pypdfium2, included in the Docker image and OCR requirements. Previews and downloads recheck collection access.
 
 Without passages, the app answers without calling the model. With passages, instructions require evidence-based answers, acknowledged gaps, and source identifiers. Unknown labels are flagged, never linked. Source panels use retrieved metadata rather than model-generated URLs.
 
@@ -186,7 +222,7 @@ Without passages, the app answers without calling the model. With passages, inst
 
 ## Backup and migration
 
-Use **Settings & backup → Download backup** as administrator. The archive contains a consistent SQLite snapshot, original PDFs, embeddings, account hashes, conversations, and a checksum manifest. Model weights are excluded.
+Use **Settings & backup → Download backup** as administrator. The archive contains a consistent SQLite snapshot, original documents, embeddings, account hashes, conversations, and a checksum manifest. Model weights are excluded.
 
 Backups are **not encrypted**. Store them securely. Checksums detect corruption, not malicious replacement. Restore only archives from trusted installations.
 
@@ -241,6 +277,10 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for LAN, HTTPS, migration, and systemd.
 | app/inference.py | GGUF lifecycle, context budgeting, generation |
 | app/retrieval.py | Chunking, embeddings, authorised hybrid search |
 | app/index_document.py | PDF extraction, OCR, atomic indexing |
+| app/features.py | Setup checks, model import/profiles, sharing, preview APIs |
+| app/formats.py | Bounded Office/text/table extraction |
+| app/document_chat.py | Complete selected-document map/reduce |
+| app/machine.py | Hardware/dependency and GGUF metadata inspection |
 | app/worker.py | Persistent queue and subprocess timeouts |
 | app/maintenance.py | Snapshot and validated restore |
 | app/cli.py | Start, setup, backup, restore, password recovery |
@@ -252,9 +292,9 @@ Implementation uses FastAPI, SQLite directly, and a self-contained JavaScript fr
 
 ## Development and verification
 
-Initial publication status: GitHub accepted the source, but its first Actions run failed before either job executed any steps. No job logs were available through the integration. Python tests, container builds, and actual-model validation must therefore be treated as **unverified**, not passed. Check the latest Actions run before deployment.
+Version 1.1 local verification: **49 Python tests passed**, including the 24 original regression tests. DOM smoke checks passed for setup, navigation, profiles, sharing, document listing and summary selection. The browser preview could not connect to the local address, so visual rendering was not verified. Docker and real-GGUF/GPU testing remain unverified in this session; generation tests use a simulated model boundary.
 
-API documentation is at /docs. Mutations require a session cookie, X-Nelson-Client: web, and the X-CSRF-Token returned at login. PDF uploads use application/pdf bytes and a URL-encoded X-Filename header.
+API documentation is at /docs. Mutations require a session cookie, X-Nelson-Client: web, and the X-CSRF-Token returned at login. Document uploads use raw file bytes and a URL-encoded X-Filename header. Model imports use the same header plus optional X-SHA256.
 
 ~~~bash
 pip install -r requirements-dev.txt

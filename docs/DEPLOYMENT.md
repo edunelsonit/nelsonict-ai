@@ -28,7 +28,7 @@ Caddy forwards streaming without buffering. Uvicorn trusts forwarded headers fro
 
 Origin validation compares the browser origin to the effective application URL. Wrong proxy scheme forwarding can reject login/uploads. Correct the proxy instead of disabling validation.
 
-The proxy's 26 MB limit accommodates the default 25 MB PDF limit. Update both together.
+The example uses a 21 GB limit only for /api/models/import and 26 MB for ordinary uploads. The application still enforces its own configured limits and administrator authentication. Change proxy/application limits together. Ensure the model directory is writable by the app account (container UID 10001) before using browser import.
 
 ## systemd
 
@@ -98,7 +98,7 @@ Sign in and load a model through the GUI. Keep the old volume until recovery is 
 
 Back up, stop services, pull the new source, review schema notes, rebuild dependencies/images, restart, and verify sign-in, retrieval, and inference.
 
-Schema version 1 is created on first run. A newer schema is rejected. Future releases must introduce explicit migrations instead of silently changing the database.
+Schema version 2 is current. Version 1 migrates automatically and transactionally, retaining existing records. Back up before upgrade and stop both services first. Versions newer than 2 are rejected. Keep the pre-migration backup for rollback; old code cannot open the new database.
 
 ## Troubleshooting
 
@@ -120,4 +120,4 @@ Schema version 1 is created on first run. A newer schema is rejected. Future rel
 
 ## Boundaries
 
-One host and a bounded user group. No billing, SSO, email password recovery, horizontal scaling, automatic model downloads, or shared team knowledge. Original PDF quotas do not limit total chat/embedding/backup/model storage; monitor disk use separately. Backups include every account's sensitive data.
+One host and a bounded user group. No billing, SSO, email password recovery, horizontal scaling, or automatic model downloads. Original PDF quotas do not limit total chat/embedding/backup/model storage; monitor disk use separately. Backups include every account's sensitive data.

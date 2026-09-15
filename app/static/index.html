@@ -13,7 +13,7 @@
  <span class="eyebrow">YOUR KNOWLEDGE. YOUR COMPUTER.</span>
  <h1>Big ideas.<br>Local intelligence.</h1>
  <p>A private space to think, learn, and work with your documents.</p>
- <div class="feature-strip"><span>Local GGUF models</span><span>PDF knowledge</span><span>SQLite storage</span></div>
+ <div class="feature-strip"><span>Local GGUF models</span><span>Document knowledge</span><span>SQLite storage</span></div>
  <small>Built for Nelsonict Services Limited</small></section>
  <section class="auth-card"><span class="eyebrow">WELCOME TO NELSONICT AI</span><h2 id="auth-title">Sign in</h2>
  <p id="auth-description">Continue to your private AI workspace.</p>
@@ -30,7 +30,7 @@
  <a class="brand" href="/"><img src="/logo.svg" alt="">NELSONICT <b>AI</b></a>
  <button class="primary" id="new-chat">＋ New conversation</button>
  <nav aria-label="Main navigation">
- <button data-view="chat" class="active">◉ Chat</button><button data-view="knowledge">▤ Knowledge</button>
+ <button data-view="wizard" data-admin>✓ Setup wizard</button><button data-view="chat" class="active">◉ Chat</button><button data-view="knowledge">▤ Knowledge</button>
  <button data-view="assistants">◇ Assistants</button><button data-view="models" data-admin>▧ Models</button>
  <button data-view="settings">⚙ Settings & backup</button>
  </nav>
@@ -45,6 +45,8 @@
  <label>Assistant<select id="chat-assistant"><option value="">Nelsonict AI</option></select></label>
  <label>Answer mode<select id="chat-mode"><option value="documents">Document answers</option><option value="general">General chat</option></select></label>
  <label>Knowledge base<select id="chat-kb"><option value="">Select knowledge</option></select></label>
+ <label>Document task<select id="chat-task"><option value="question">Ask / follow up</option><option value="summary">Full summary</option><option value="compare">Compare documents</option></select></label>
+ <label>Selected documents<select id="chat-documents" multiple size="2" aria-label="Documents to summarise or compare"></select><small>Ctrl/⌘ to select more than one</small></label>
  <button id="rename-chat" class="quiet">Rename</button><button id="export-chat" class="quiet">Export</button>
  <button id="delete-chat" class="quiet danger">Delete</button>
  </div>
@@ -60,13 +62,13 @@
  <p class="chat-footnote">AI can make mistakes. Check important answers against the original sources.</p>
  </section>
  <section id="view-knowledge" class="view" hidden>
- <div class="section-heading"><div><h1>Build your knowledge library.</h1><p>Upload PDFs and give your assistant the context it needs.</p></div><button class="primary" id="new-kb">＋ Knowledge base</button></div>
+ <div class="section-heading"><div><h1>Build your knowledge library.</h1><p>Upload documents and give your assistant the context it needs.</p></div><button class="primary" id="new-kb">＋ Knowledge base</button></div>
  <div class="knowledge-layout"><div id="knowledge-list" class="card"></div>
- <div><div class="card upload-card"><span class="eyebrow">PDF KNOWLEDGE</span><h2 id="kb-title">Select a knowledge base</h2>
- <p>Searchable PDFs and scanned documents. Processing runs in the background.</p>
- <label class="upload-zone">＋ Choose PDF documents<input type="file" id="pdf-files" accept="application/pdf,.pdf" multiple></label>
+ <div><div class="card upload-card"><span class="eyebrow">DOCUMENT KNOWLEDGE</span><h2 id="kb-title">Select a knowledge base</h2>
+ <p>PDF, Word (DOCX), text, Markdown, CSV, and Excel (XLSX). Processing runs in the background.</p>
+ <label class="upload-zone">＋ Choose documents<input type="file" id="pdf-files" accept=".pdf,.docx,.txt,.md,.csv,.xlsx" multiple></label>
  <div class="row"><small id="worker-state">Checking PDF worker…</small><button id="delete-kb" class="quiet danger">Delete knowledge base</button></div>
- </div><div id="document-list"></div></div></div>
+ </div><div id="sharing-card" class="card" hidden><h2>Share this knowledge base</h2><p>Grant access to an existing account. Readers can ask questions and view sources. Editors can also upload and reindex.</p><form id="share-form" class="row"><label>Username<input id="share-username" required minlength="3"></label><label>Permission<select id="share-permission"><option value="reader">Reader</option><option value="editor">Editor</option></select></label><button class="primary">Grant access</button></form><div id="member-list"></div></div><div id="document-list"></div></div></div>
  </section>
  <section id="view-assistants" class="view" hidden>
  <div class="section-heading"><div><h1>An assistant for every task.</h1><p>Give each assistant a purpose and its own document collection.</p></div></div>
@@ -80,6 +82,7 @@
  </section>
  <section id="view-models" class="view" hidden>
  <div class="section-heading"><div><h1>Intelligence on your terms.</h1><p>Load a compatible instruction-tuned GGUF model from the server’s models folder.</p></div><button id="refresh-models">Refresh files</button></div>
+ <div class="two-column"><div class="card"><h2>Import a GGUF file</h2><form id="model-import-form"><label>Model file<input type="file" id="model-import-file" accept=".gguf" required></label><label>Expected SHA-256 (optional)<input id="model-sha" pattern="[a-fA-F0-9]{64}" placeholder="Paste the publisher's checksum"></label><progress id="model-upload-progress" max="100" value="0"></progress><p id="import-status"></p><div class="row"><button id="import-model" class="primary">Import file</button><button type="button" id="cancel-import">Cancel upload</button></div></form></div><div class="card"><h2>Saved model profiles</h2><label>Profile<select id="profile-list"></select></label><div class="row"><button id="use-profile">Apply to form</button><button id="delete-profile">Delete profile</button></div><label>Save current form as<input id="profile-name" maxlength="100" placeholder="e.g. Laptop CPU"></label><button id="save-profile">Save profile</button><button id="inspect-model">Inspect file & checksum</button><pre id="model-inspection" class="message-text"></pre></div></div>
  <div class="two-column"><form id="model-form" class="card"><h2>Model configuration</h2>
  <label>GGUF file<select id="model-file" required></select></label>
  <div class="two-column"><label>Context tokens<input id="model-context" type="number" min="1024" max="32768" value="4096" required></label>
@@ -95,6 +98,7 @@
  <p>Only one response runs at a time. Other requests receive a busy message. Stop an active response before switching models.</p>
  <p>Model compatibility, memory use, and speed depend on your model and hardware.</p></div></div>
  </section>
+ <section id="view-wizard" class="view" hidden><div class="section-heading"><div><h1>Set up Nelsonict AI.</h1><p>Check this computer, load a model, and test your first conversation.</p></div><button id="wizard-refresh">Refresh checks</button></div><ol class="wizard-steps"><li>Check computer</li><li>Import & load GGUF</li><li>Test response</li><li>Add knowledge</li></ol><div class="two-column"><div class="card"><h2>1 · Computer & dependencies</h2><div id="machine-report">Checking…</div><button id="apply-recommendations">Use suggested CPU settings</button></div><div class="card"><h2>2 · Choose your model</h2><p>Import a GGUF in Models, or copy it to the server's model folder. Hardware detection provides estimates; only a successful load confirms basic compatibility.</p><button id="wizard-models">Open model manager</button><h2>3 · Test a response</h2><button id="wizard-test">Run local model test</button><pre id="wizard-test-result" class="message-text"></pre><h2>4 · Add knowledge</h2><button id="wizard-knowledge">Open document library</button><p>Wait for documents to become Ready before asking about them.</p><button id="wizard-complete" class="primary">Finish setup</button></div></div></section>
  <section id="view-settings" class="view" hidden>
  <div class="section-heading"><div><h1>Make yourself at home.</h1><p>Manage the workspace and keep a recoverable copy of your work.</p></div></div>
  <div class="two-column"><div class="card"><h2>Appearance</h2><button id="theme-toggle">Switch light / dark</button><h2>System status</h2><p id="system-status"></p></div>
@@ -108,9 +112,10 @@
  <label>Initial password<input id="new-password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label>
  <label>Role<select id="new-role"><option value="member">Member</option><option value="admin">Administrator</option></select></label><button class="primary">Create user</button>
  </form><div id="user-list"></div></div>
- <p class="muted">Nelsonict AI 1.0 · Nelsonict Services Limited · GPL-3.0. Each user’s knowledge and conversations are private.</p>
+ <p class="muted">Nelsonict AI 1.1 · Nelsonict Services Limited · GPL-3.0. Conversations stay private. Knowledge is private unless its owner shares it.</p>
  </section>
  </main>
 </div>
+<dialog id="source-preview"><div class="row"><h2 id="preview-title">Source preview</h2><button id="close-preview">Close</button></div><div class="row"><label>Page / source unit<input id="preview-page" type="number" min="1" value="1"></label><button id="preview-go">Go</button><a id="preview-download" class="button">Download original</a></div><div id="preview-content"></div></dialog>
 <div id="toast" role="status" hidden></div>
 </body></html>

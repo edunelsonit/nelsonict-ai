@@ -76,11 +76,24 @@ def initialize():
     settings.models_dir.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version > 1:
+        if version > 2:
             raise RuntimeError("Database belongs to a newer Nelsonict AI release.")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
-        conn.execute("PRAGMA user_version=1")
+        # Serialize migration across API/worker startup; existing v1 data stays intact.
+        conn.execute("BEGIN IMMEDIATE")
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
+        if "format" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN format TEXT NOT NULL DEFAULT 'pdf'")
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(chunks)")}
+        if "location" not in columns:
+            conn.execute("ALTER TABLE chunks ADD COLUMN location TEXT")
+        conn.execute("CREATE TABLE IF NOT EXISTS knowledge_members (kb_id INTEGER NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, permission TEXT NOT NULL CHECK(permission IN ('reader','editor')), PRIMARY KEY(kb_id,user_id))")
+        conn.execute("CREATE TABLE IF NOT EXISTS model_profiles (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, config TEXT NOT NULL)")
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(messages)")}
+        if "knowledge_id" not in columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN knowledge_id INTEGER")
+        conn.execute("PRAGMA user_version=2")
 
 
 def rows(sql, params=()):

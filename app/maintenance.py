@@ -63,7 +63,7 @@ def restore_backup(archive_path, destination):
             try:
                 if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise ValueError("Backup database failed its integrity check.")
-                if conn.execute("PRAGMA user_version").fetchone()[0] != 1:
+                if conn.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
                     raise ValueError("Unsupported database schema.")
                 if conn.execute("PRAGMA foreign_key_check").fetchone():
                     raise ValueError("Backup contains invalid references.")
@@ -72,7 +72,7 @@ def restore_backup(archive_path, destination):
                     conn.execute("DELETE FROM login_attempts")
                     conn.execute("UPDATE documents SET status='queued',progress=0 WHERE status='processing'")
                     conn.execute("UPDATE messages SET status='interrupted' WHERE status='generating'")
-                    conn.execute("DELETE FROM settings WHERE key IN ('model_config','worker_heartbeat')")
+                    conn.execute("DELETE FROM settings WHERE key IN ('model_config','worker_heartbeat','model_test_passed','wizard_complete')")
                 conn.execute("PRAGMA journal_mode=DELETE")
             finally:
                 conn.close()

@@ -17,9 +17,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import db
+from .features import router as feature_router
 from .config import settings
 from .inference import runtime
 from .retrieval import search
+from .document_chat import selected_documents, all_passages, summarise
+from .security import knowledge_access
+from .formats import validate, FORMATS
+from .schemas import Share, Profile
 from .schemas import Credentials, Setup, NewUser, Name, Assistant, Conversation, Chat, ModelConfig
 from .security import current_user, administrator, owned, owned_document, rate_limit, token_hash, hasher, verify
 
@@ -63,7 +68,8 @@ async def lifespan(app):
         lock.release()
 
 
-app = FastAPI(title="Nelsonict AI", version="1.0.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="Nelsonict AI", version="1.1.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+app.include_router(feature_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts.split(","))
 
 
@@ -83,7 +89,7 @@ async def protections(request, call_next):
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
@@ -93,7 +99,7 @@ async def protections(request, call_next):
 @app.get("/api/health")
 def health():
     db.one("SELECT 1")
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.1.0"}
 
 
 @app.get("/api/setup")
@@ -186,8 +192,10 @@ def enable_user(identifier: int, user=Depends(administrator)):
 
 @app.get("/api/knowledge")
 def knowledge(user=Depends(current_user)):
-    return db.rows("SELECT k.*,count(d.id) documents FROM knowledge_bases k LEFT JOIN documents d ON d.kb_id=k.id "
-                   "WHERE k.user_id=? GROUP BY k.id ORDER BY k.id DESC", (user["id"],))
+    return db.rows("SELECT k.*,count(d.id) documents,CASE WHEN k.user_id=? THEN 'owner' ELSE m.permission END permission "
+                   "FROM knowledge_bases k LEFT JOIN documents d ON d.kb_id=k.id "
+                   "LEFT JOIN knowledge_members m ON m.kb_id=k.id AND m.user_id=? "
+                   "WHERE k.user_id=? OR m.user_id=? GROUP BY k.id ORDER BY k.id DESC", (user["id"],)*4)
 
 
 @app.post("/api/knowledge", status_code=201)
@@ -204,66 +212,64 @@ def delete_knowledge(identifier: int, user=Depends(current_user)):
 
 @app.get("/api/knowledge/{identifier}/documents")
 def documents(identifier: int, user=Depends(current_user)):
-    owned("knowledge_bases", identifier, user["id"])
-    return db.rows("SELECT id,name,size,status,progress,error,pages,created FROM documents WHERE kb_id=? ORDER BY id DESC",
+    knowledge_access(identifier, user["id"])
+    return db.rows("SELECT id,name,size,status,progress,error,pages,created,format FROM documents WHERE kb_id=? ORDER BY id DESC",
                    (identifier,))
 
 
 @app.post("/api/knowledge/{identifier}/documents", status_code=202)
 async def upload(identifier: int, request: Request, user=Depends(current_user)):
-    # Raw PDF request body avoids buffering unbounded multipart uploads before applying the limit.
-    owned("knowledge_bases", identifier, user["id"])
-    if request.headers.get("content-type", "").split(";")[0] != "application/pdf":
-        raise HTTPException(415, "Send an application/pdf body.")
+    collection = knowledge_access(identifier, user["id"], write=True)
     from urllib.parse import unquote
     name = unquote(request.headers.get("X-Filename", "document.pdf")).replace("\\", "/").rsplit("/", 1)[-1][:180]
-    if not name.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files are supported.")
     payload = bytearray()
     async for part in request.stream():
+        if len(payload) + len(part) > settings.max_upload_mb * 1024 * 1024:
+            raise HTTPException(413, "Document exceeds the upload size limit.")
         payload.extend(part)
-        if len(payload) > settings.max_upload_mb * 1024 * 1024:
-            raise HTTPException(413, "PDF exceeds the upload size limit.")
-    if not payload.startswith(b"%PDF-"):
-        raise HTTPException(400, "File is not a PDF.")
+    try:
+        kind = await asyncio.to_thread(validate, bytes(payload), name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     def save():
         with db.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            knowledge_access(identifier, user["id"], write=True, conn=conn)
             total = conn.execute(
                 "SELECT coalesce(sum(d.size),0) FROM documents d JOIN knowledge_bases k ON k.id=d.kb_id WHERE k.user_id=?",
-                (user["id"],)).fetchone()[0]
+                (collection["user_id"],)).fetchone()[0]
             if total + len(payload) > settings.user_storage_mb * 1024 * 1024:
                 raise HTTPException(413, "Your document storage quota is full.")
             try:
                 identifier_new = conn.execute(
-                    "INSERT INTO documents(kb_id,name,sha256,pdf,size,created) VALUES(?,?,?,?,?,?)",
-                    (identifier, name, hashlib.sha256(payload).hexdigest(), bytes(payload), len(payload), time.time())).lastrowid
+                    "INSERT INTO documents(kb_id,name,sha256,pdf,size,created,format) VALUES(?,?,?,?,?,?,?)",
+                    (identifier, name, hashlib.sha256(payload).hexdigest(), bytes(payload), len(payload), time.time(), kind)).lastrowid
             except sqlite3.IntegrityError:
-                raise HTTPException(409, "PDF already exists in this knowledge base, or the knowledge base was removed.")
+                raise HTTPException(409, "Document already exists in this knowledge base, or the knowledge base was removed.")
         return {"id": identifier_new, "status": "queued"}
     return await asyncio.to_thread(save)
 
 
 @app.get("/api/documents/{identifier}/download")
 def download_document(identifier: int, user=Depends(current_user)):
-    owned_document(identifier, user["id"])
+    document = owned_document(identifier, user["id"])
     row = db.one("SELECT pdf FROM documents WHERE id=?", (identifier,))
     if not row:
         raise HTTPException(404)
-    return Response(row["pdf"], media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="document-{identifier}.pdf"'})
+    return Response(row["pdf"], media_type=FORMATS[document["format"]],
+                    headers={"Content-Disposition": f'attachment; filename="document-{identifier}.{document["format"]}"'})
 
 
 @app.delete("/api/documents/{identifier}")
 def delete_document(identifier: int, user=Depends(current_user)):
-    owned_document(identifier, user["id"])
+    owned_document(identifier, user["id"], owner_only=True)
     db.execute("DELETE FROM documents WHERE id=?", (identifier,))
     return {"ok": True}
 
 
 @app.post("/api/documents/{identifier}/reindex")
 def reindex(identifier: int, user=Depends(current_user)):
-    row = owned_document(identifier, user["id"])
+    row = owned_document(identifier, user["id"], write=True)
     if row["status"] == "processing":
         raise HTTPException(409, "Wait for current processing to finish.")
     db.execute("UPDATE documents SET status='queued',progress=0,error=NULL WHERE id=?", (identifier,))
@@ -278,7 +284,7 @@ def assistants(user=Depends(current_user)):
 @app.post("/api/assistants", status_code=201)
 def add_assistant(body: Assistant, user=Depends(current_user)):
     if body.kb_id:
-        owned("knowledge_bases", body.kb_id, user["id"])
+        knowledge_access(body.kb_id, user["id"])
     return {"id": db.execute("INSERT INTO assistants(user_id,name,instructions,kb_id) VALUES(?,?,?,?)",
                             (user["id"], body.name, body.instructions, body.kb_id))}
 
@@ -287,7 +293,7 @@ def add_assistant(body: Assistant, user=Depends(current_user)):
 def edit_assistant(identifier: int, body: Assistant, user=Depends(current_user)):
     owned("assistants", identifier, user["id"])
     if body.kb_id:
-        owned("knowledge_bases", body.kb_id, user["id"])
+        knowledge_access(body.kb_id, user["id"])
     db.execute("UPDATE assistants SET name=?,instructions=?,kb_id=? WHERE id=?",
                (body.name, body.instructions, body.kb_id, identifier))
     return {"ok": True}
@@ -363,15 +369,21 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
     if body.mode == "documents":
         if not kb_id:
             raise HTTPException(400, "Select a knowledge base for document answers.")
-        owned("knowledge_bases", kb_id, user["id"])
+        knowledge_access(kb_id, user["id"])
+        if body.document_ids or body.task != "question":
+            selected_documents(user["id"], kb_id, body.document_ids)
+        if body.task == "compare" and len(set(body.document_ids)) < 2:
+            raise HTTPException(400, "Select at least two documents to compare.")
+    elif body.task != "question":
+        raise HTTPException(400, "Summary and comparison require document mode.")
     try:
         stop = runtime.reserve(identifier, user["id"])
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     try:
         with db.connect() as conn:
-            conn.execute("INSERT INTO messages(conversation_id,role,content,created) VALUES(?,'user',?,?)",
-                         (identifier, body.content, time.time()))
+            conn.execute("INSERT INTO messages(conversation_id,role,content,created,knowledge_id) VALUES(?,'user',?,?,?)",
+                         (identifier, body.content, time.time(), kb_id if body.mode == "documents" else None))
             message_id = conn.execute(
                 "INSERT INTO messages(conversation_id,role,content,status,created) VALUES(?,'assistant','','generating',?)",
                 (identifier, time.time())).lastrowid
@@ -391,24 +403,35 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
     def generate():
         text, sources, status = "", [], "complete"
         try:
-            if body.mode == "documents":
-                sources = search(user["id"], kb_id, body.content)
+            question = body.content
             history = db.rows(
                 "SELECT role,content FROM messages WHERE conversation_id=? AND id<? AND status='complete' "
                 "ORDER BY id DESC LIMIT 12", (identifier, message_id - 1))[::-1]
-            # Document mode avoids importing unsupported claims or old source IDs from previous replies.
             if body.mode == "documents":
+                knowledge_access(kb_id, user["id"])
+                prior = db.rows("SELECT content FROM messages WHERE conversation_id=? AND id<? AND role='user' "
+                                "AND knowledge_id=? ORDER BY id DESC LIMIT 2", (identifier, message_id-1, kb_id))[::-1]
+                if prior and body.task == "question":
+                    question = "Earlier user questions (context only): " + " | ".join(r["content"][:1000] for r in prior) + "\nCurrent question: " + body.content
                 history = []
-            prompt, sources = runtime.fit(instructions + (DOCUMENT_RULES if body.mode == "documents" else ""),
-                                          body.content, history, sources)
-            send({"type": "sources", "sources": sources})
-            if body.mode == "documents" and not sources:
-                text = "I could not find supporting passages in the selected knowledge base. Try a more specific question or upload the relevant document."
-                send({"type": "token", "text": text})
-            else:
-                for token in runtime.stream(prompt, stop):
+            if body.mode == "documents" and body.task in ("summary", "compare"):
+                sources = all_passages(user["id"], kb_id, body.document_ids)
+                send({"type": "sources", "sources": sources})
+                for token in summarise(runtime,sources,body.content,body.task,stop,send):
                     text += token
                     send({"type": "token", "text": token})
+            else:
+                if body.mode == "documents":
+                    sources = search(user["id"], kb_id, question, document_ids=body.document_ids)
+                prompt, sources = runtime.fit(instructions + (DOCUMENT_RULES if body.mode == "documents" else ""), question, history, sources)
+                send({"type": "sources", "sources": sources})
+                if body.mode == "documents" and not sources:
+                    text = "I could not find supporting passages in the selected knowledge base. Try a more specific question or upload the relevant document."
+                    send({"type": "token", "text": text})
+                else:
+                    for token in runtime.stream(prompt, stop):
+                        text += token
+                        send({"type": "token", "text": token})
             if stop.is_set():
                 status = "cancelled"
             # Record unknown citation labels; never make them clickable.
@@ -420,7 +443,7 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
                 text += warning
                 send({"type": "token", "text": warning})
         except Exception as exc:
-            status = "failed"
+            status = "cancelled" if stop.is_set() else "failed"
             error = str(exc)[:400]
             send({"type": "error", "message": error})
             text += "\n\n[Response interrupted: " + error + "]"
@@ -501,6 +524,7 @@ async def load_model(body: ModelConfig, user=Depends(administrator)):
     except Exception as exc:
         raise HTTPException(400, "Model could not load: " + str(exc)[:300])
     db.set_setting("model_config", config)
+    db.set_setting("model_test_passed", False)
     return runtime.status()
 
 
@@ -511,6 +535,7 @@ async def unload_model(user=Depends(administrator)):
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     db.set_setting("model_config", None)
+    db.set_setting("model_test_passed", False)
     return {"ok": True}
 
 

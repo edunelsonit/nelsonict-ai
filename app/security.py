@@ -49,12 +49,28 @@ def owned(table, identifier, user_id):
     return row
 
 
-def owned_document(identifier, user_id):
-    row = db.one(
-        "SELECT d.id,d.kb_id,d.name,d.status FROM documents d JOIN knowledge_bases k ON k.id=d.kb_id "
-        "WHERE d.id=? AND k.user_id=?", (identifier, user_id))
+def knowledge_access(identifier, user_id, write=False, conn=None):
+    sql = ("SELECT k.*,CASE WHEN k.user_id=? THEN 'owner' ELSE m.permission END permission "
+           "FROM knowledge_bases k LEFT JOIN knowledge_members m ON m.kb_id=k.id AND m.user_id=? "
+           "WHERE k.id=? AND (k.user_id=? OR m.user_id=?)")
+    params = (user_id, user_id, identifier, user_id, user_id)
+    row = dict(r) if conn and (r := conn.execute(sql, params).fetchone()) else None
+    if conn is None:
+        row = db.one(sql, params)
+    if not row:
+        raise HTTPException(404, "Knowledge base not found.")
+    if write and row["permission"] not in ("owner", "editor"):
+        raise HTTPException(403, "Editor access required.")
+    return row
+
+
+def owned_document(identifier, user_id, write=False, owner_only=False):
+    row = db.one("SELECT id,kb_id,name,status,format FROM documents WHERE id=?", (identifier,))
     if not row:
         raise HTTPException(404, "Document not found.")
+    knowledge = knowledge_access(row["kb_id"], user_id, write)
+    if owner_only and knowledge["permission"] != "owner":
+        raise HTTPException(403, "Only the collection owner can delete documents.")
     return row
 
 

@@ -33,3 +33,14 @@
 - Measure peak RAM with simultaneous indexing and generation.
 
 Automated tests simulate generation and do not establish hardware compatibility, model quality, OCR accuracy, or production capacity.
+
+## Version 1.1
+- Run Setup wizard and review detected hardware/dependencies before loading a model.
+- Import a GGUF with a publisher checksum and confirm a mismatch is rejected.
+- Save a CPU profile, change the form, reapply the profile, and load.
+- Upload DOCX/TXT/MD/CSV/XLSX samples and verify paragraph/line/sheet references.
+- Test follow-up questions and full summary/comparison with your actual model.
+- Click PDF citations and check displayed pages.
+- Grant reader then editor access; verify edit controls and backend permissions.
+- Revoke sharing and confirm new retrieval/downloads stop; historical chat excerpts remain.
+- Upgrade a backup of the v1 database and compare document/chat counts.

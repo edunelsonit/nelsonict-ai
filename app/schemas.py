@@ -33,6 +33,8 @@ class Chat(BaseModel):
     content: str = Field(min_length=1, max_length=12000)
     mode: Literal["general", "documents"] = "documents"
     kb_id: int | None = None
+    task: Literal["question", "summary", "compare"] = "question"
+    document_ids: list[int] = Field(default_factory=list, max_length=8)
 
 
 class ModelConfig(BaseModel):
@@ -43,3 +45,13 @@ class ModelConfig(BaseModel):
     chat_format: str | None = Field(default=None, max_length=80)
     max_tokens: int = Field(default=512, ge=64, le=2048)
     temperature: float = Field(default=0.3, ge=0, le=1.5)
+
+
+class Share(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    permission: Literal["reader", "editor"] = "reader"
+
+
+class Profile(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    config: ModelConfig

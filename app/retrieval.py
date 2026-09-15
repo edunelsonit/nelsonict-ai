@@ -66,13 +66,22 @@ def embed(texts, query=False):
     return np.asarray(vectors, dtype="<f4"), identity
 
 
-def search(user_id, kb_id, question, limit=5):
-    # Every candidate, including vectors, is selected only from an owned, ready knowledge base.
+def search(user_id, kb_id, question, limit=5, document_ids=None):
+    # Permission is enforced before scoring, including the semantic vector scan.
+    from .security import knowledge_access
+    from fastapi import HTTPException
+    try:
+        knowledge_access(kb_id, user_id)
+    except HTTPException:
+        return []
+    document_ids = document_ids or []
+    restriction = (" AND d.id IN (" + ",".join("?" for _ in document_ids) + ")") if document_ids else ""
     candidates = db.rows(
-        "SELECT c.id,c.page,c.text,c.vector,c.embedding_id,d.id document_id,d.name "
+        "SELECT c.id,c.page,c.location,c.text,c.vector,c.embedding_id,d.id document_id,d.name,d.format "
         "FROM chunks c JOIN documents d ON d.id=c.document_id JOIN knowledge_bases k ON k.id=d.kb_id "
-        "WHERE k.user_id=? AND k.id=? AND d.status='ready' LIMIT ?",
-        (user_id, kb_id, settings.max_chunks + 1))
+        "WHERE (k.user_id=? OR EXISTS(SELECT 1 FROM knowledge_members m WHERE m.kb_id=k.id AND m.user_id=?)) "
+        "AND k.id=? AND d.status='ready'" + restriction + " LIMIT ?",
+        (user_id, user_id, kb_id, *document_ids, settings.max_chunks + 1))
     if len(candidates) > settings.max_chunks:
         raise RuntimeError("Knowledge base exceeds the configured search limit.")
     if not candidates:
@@ -84,8 +93,9 @@ def search(user_id, kb_id, question, limit=5):
         hits = db.rows(
             "SELECT c.id FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid "
             "JOIN documents d ON d.id=c.document_id JOIN knowledge_bases k ON k.id=d.kb_id "
-            "WHERE chunks_fts MATCH ? AND k.user_id=? AND k.id=? AND d.status='ready' "
-            "ORDER BY bm25(chunks_fts) LIMIT 30", (expression, user_id, kb_id))
+            "WHERE chunks_fts MATCH ? AND (k.user_id=? OR EXISTS(SELECT 1 FROM knowledge_members m WHERE m.kb_id=k.id AND m.user_id=?)) "
+            "AND k.id=? AND d.status='ready'" + restriction + " ORDER BY bm25(chunks_fts) LIMIT 30",
+            (expression, user_id, user_id, kb_id, *document_ids))
         for rank, hit in enumerate(hits):
             scores[hit["id"]] = 1 / (60 + rank)
     if settings.embedding_model:
@@ -108,5 +118,5 @@ def search(user_id, kb_id, question, limit=5):
         row = lookup[identifier]
         result.append({"id": f"S{len(result)+1}", "chunk_id": identifier,
                        "document_id": row["document_id"], "name": row["name"],
-                       "page": row["page"], "text": row["text"]})
+                       "page": row["page"], "location": row["location"] or f"Page {row['page']}", "format": row["format"], "text": row["text"]})
     return result
