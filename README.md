@@ -4,6 +4,30 @@
 
 [![Application checks](https://github.com/edunelsonit/nelsonict-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/edunelsonit/nelsonict-ai/actions/workflows/ci.yml)
 
+## Contents
+
+- [Features](#included)
+- [Requirements](#requirements)
+- [Docker quick start](#quick-start--docker-cpu)
+- [Ubuntu / Debian installation](#native-installation--ubuntu--debian)
+- [Windows and macOS](#windows-and-macos)
+- [First-run setup and daily use](#first-run-setup-and-daily-use)
+- [Configuration reference](#configuration-reference)
+- [Upgrading from 1.0](#upgrading-from-10)
+- [GGUF models and hardware](#gguf-models-and-hardware)
+- [Document knowledge and sharing](#document-knowledge)
+- [Optional semantic search](#optional-semantic-search)
+- [Answer quality](#answer-quality)
+- [Backup and migration](#backup-and-migration)
+- [Deployment](#deployment)
+- [Security and data storage](#security-and-data-storage)
+- [API reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
+- [Source structure](#source-structure)
+- [Development and verification](#development-and-verification)
+- [Contributing](#contributing)
+- [Licence](#licence)
+
 ## Included
 
 - Responsive browser interface with light/dark themes; no frontend build or CDN dependency.
@@ -20,6 +44,31 @@
 - Native installation, Docker Compose, Caddy/systemd examples, and automated tests.
 
 **PDF “training” means retrieval-augmented generation (RAG).** Uploading PDFs does not change GGUF model weights. Relevant passages are supplied to the model at question time. Fine-tuning, LoRA training, and model conversion are not included.
+
+### New in 1.1
+
+| Update | What you can do |
+|---|---|
+| 1. Guided setup | Check hardware and dependencies, apply suggested CPU settings, and test the loaded model. |
+| 2. Document analysis | Ask follow-up questions, summarise complete selected documents, compare documents, and preview citations. |
+| 3. More document formats | Add DOCX, TXT, Markdown, CSV, and XLSX alongside PDF and optional scanned-PDF OCR. |
+| 4. Model management | Import GGUF files in the browser, check SHA-256 values, inspect metadata, and save configuration profiles. |
+| 5. Shared knowledge | Give existing users reader or editor access to selected knowledge bases. |
+
+## Requirements
+
+| Component | Requirement |
+|---|---|
+| Server | A computer or VPS that can run long-lived Python processes or Docker containers. |
+| Native runtime | Python 3.11 or 3.12, a working C/C++ build toolchain if inference wheels are unavailable, and SQLite with FTS5. |
+| Docker runtime | Docker Engine/Desktop with the Compose plugin. |
+| Language model | A compatible local `.gguf` file supplied by the operator. No model weights are bundled. |
+| Memory | Enough for the model weights, context cache, operating system, document processing, and optional embeddings. The setup wizard reports available memory; fitting a model is not guaranteed. |
+| Storage | Persistent local disk for SQLite, GGUF files, optional embedding models, import staging, and backups. |
+| Browser | A modern browser with JavaScript, streaming fetch, and cookies enabled. |
+| Optional OCR | Tesseract with the required language packs and `requirements-ocr.txt`. English OCR is included in Docker. |
+
+Internet access is needed to obtain dependencies and models. Normal chat and document processing can operate offline after installation. There is no required external AI API key. GPU acceleration is optional and depends on your installed inference build.
 
 ## Quick start — Docker CPU
 
@@ -74,7 +123,7 @@ python -m app.cli setup-token
 python -m app.cli run
 ~~~
 
-The run command starts the web application and PDF worker. Keep the terminal open; Ctrl+C stops them.
+The run command starts the web application and document worker. Keep the terminal open; Ctrl+C stops them.
 
 Alternatively, run these in separate terminals in the same project directory/environment:
 
@@ -105,6 +154,84 @@ If a matching inference wheel is unavailable, installation needs a supported C/C
 On macOS, install Python, CMake, and Tesseract, then follow the native Python commands. Use ARM64 Python on Apple Silicon. GPU support requires a matching build.
 
 Upstream installation: [llama-cpp-python](https://llama-cpp-python.readthedocs.io/en/latest/).
+
+## First-run setup and daily use
+
+### Create the administrator
+
+Open the application and enter the locally generated setup token. Usernames must contain 3–64 letters, digits, underscores, dots, `@`, or hyphens. Passwords must contain 12–128 characters. The first account becomes an administrator; public self-registration closes afterward.
+
+The token is kept in `data/setup-token.txt` for a native installation until setup completes. `python -m app.cli setup-token` prints it only before the first account exists. For Docker, run the command inside the app container as shown above.
+
+### Complete the setup wizard
+
+1. Review CPU, available RAM, free disk, dependency status, and worker heartbeat.
+2. Choose **Use suggested CPU settings**, or adjust settings to match your hardware.
+3. Open the model manager, import or select a GGUF file, and load it.
+4. Return to the wizard and run **Run local model test**.
+5. Open the document library if you want to add knowledge, then choose **Finish setup**.
+
+Completion requires a loaded model and a successful test. The test checks basic generation, not answer accuracy. Changing or unloading the model clears the previous test result. GPU detection alone does not establish that your inference package supports GPU offloading.
+
+### Chat with your documents
+
+1. In **Knowledge**, create a collection with a descriptive name.
+2. Upload supported files and wait for each document to show **Ready**.
+3. In **Chat**, start a conversation and select **Document answers** and the collection.
+4. Choose **Ask / follow up**, **Full summary**, or **Compare documents**.
+5. Select documents when narrowing a question, summarising, or comparing. Summary requires at least one selected document; comparison requires at least two.
+6. Ask a specific question, inspect the response, and open its cited sources.
+
+For example: “What services are described in this document?”, “Summarise all sections and list unresolved questions”, or “Compare the requirements and deadlines in these two documents.” Answers depend on what your documents actually contain.
+
+Choose **General chat** to converse without document retrieval. **Stop** ends generation cooperatively and retains the partial reply. You can rename conversations, delete them, and export their messages as JSON.
+
+### Personal assistants and accounts
+
+Create a personal assistant with a name, instructions, and an optional accessible knowledge base. Select the assistant when creating a conversation. Sharing its knowledge base does not share the assistant or conversation.
+
+Administrators add accounts and enable or disable users under **Settings & backup → User accounts**. Knowledge-base owners manage collection sharing separately. To recover a password from the server, use the administration command in [Backup and migration](#backup-and-migration).
+
+## Configuration reference
+
+Copy `.env.example` to `.env` in the project directory. Restart both the app and worker after changing runtime configuration. These are the supplied `.env` defaults; blank embedding configuration means keyword-only retrieval.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NELSON_DATA_DIR` | `data` | Directory containing `nelsonict.sqlite3` and runtime files. |
+| `NELSON_MODELS_DIR` | `models` | Directory containing local GGUF files. |
+| `NELSON_EMBEDDING_MODEL` | blank | Local Sentence Transformers model directory; never a runtime download URL. |
+| `NELSON_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated permitted request hostnames/IP addresses, without schemes or ports. |
+| `NELSON_COOKIE_SECURE` | `false` | Set `true` when clients access the application through HTTPS. |
+| `NELSON_SESSION_HOURS` | `24` | Session lifetime in hours. |
+| `NELSON_MAX_UPLOAD_MB` | `25` | Maximum original document size. |
+| `NELSON_USER_STORAGE_MB` | `250` | Original-document quota per collection owner, including uploads from editors. |
+| `NELSON_MAX_PAGES` | `300` | Maximum pages per PDF. |
+| `NELSON_MAX_CHUNKS` | `10000` | Maximum indexed passages per knowledge base. |
+| `NELSON_INDEX_TIMEOUT` | `600` | Document-indexing subprocess timeout in seconds. |
+| `NELSON_OCR_LANGUAGE` | `eng` | Installed Tesseract language code(s). |
+| `NELSON_MAX_MODEL_MB` | `20480` | Maximum GGUF browser import size. |
+| `NELSON_MAX_SUMMARY_CHUNKS` | `256` | Maximum passages for a complete summary or comparison. |
+| `NELSON_BIND_ADDRESS` | `127.0.0.1` | Compose host-side listening address; not a native CLI bind setting. |
+| `NELSON_PORT` | `8000` | Compose published host port; not a native CLI port setting. |
+| `WITH_SEMANTIC` | `false` | Optional Compose build argument; add to `.env` to include semantic dependencies. |
+
+Size settings labelled MB are implemented using 1,024 × 1,024 bytes. Original-file quotas do not cap the complete database size: extracted text, vectors, conversations, and SQLite overhead consume additional storage.
+
+Compose explicitly sets the container data and model directories to `/app/data` and `/app/models`. The database uses the `nelson_data` named volume, models use `./models`, and embeddings use the read-only `./embeddings` mount. Setting a different host `NELSON_DATA_DIR` does not relocate that named volume; change the Compose volume configuration when relocating Docker data.
+
+For native installation, choose the listening address with `python -m app.cli run --host 127.0.0.1 --port 8000`. Relative paths are resolved from the working directory, so start commands from the project root.
+
+### Model settings
+
+| Setting | Default | Accepted range / meaning |
+|---|---|---|
+| Context | `4096` | 1,024–32,768 tokens; the selected model may have a lower supported limit. |
+| CPU threads | `4` | 1–128; select a sensible count for available CPU capacity. |
+| GPU layers | `0` | −1–200; `0` uses CPU, `-1` requests all layers when the native build supports it. |
+| Response tokens | `512` | 64–2,048 tokens, within the available context budget. |
+| Temperature | `0.3` | 0–1.5. |
+| Chat format | blank | Use GGUF metadata unless a compatible explicit override is needed. |
 
 ## Upgrading from 1.0
 
@@ -150,7 +277,7 @@ Editor uploads count against the collection owner's storage quota. Revoking acce
 Processing:
 1. Validate/limit document bytes and save the original and checksum in SQLite.
 2. Claim the durable queue entry and start a time-limited document subprocess.
-3. Extract text by page and attempt OCR on pages containing very little text.
+3. Extract format-specific text; for PDF, attempt OCR on pages containing very little text.
 4. Divide text into bounded overlapping passages and generate optional embeddings.
 5. Publish all passages in one transaction after indexing succeeds.
 
@@ -216,13 +343,13 @@ Float32 vectors stay in SQLite. Retrieval selects only the user's chosen ready k
 
 Click a citation or **Preview source** to open a PDF page image or extracted non-PDF source unit. PDF rendering requires pypdfium2, included in the Docker image and OCR requirements. Previews and downloads recheck collection access.
 
-Without passages, the app answers without calling the model. With passages, instructions require evidence-based answers, acknowledged gaps, and source identifiers. Unknown labels are flagged, never linked. Source panels use retrieved metadata rather than model-generated URLs.
+In document-question mode, if no supporting passages are found, the app returns an insufficient-evidence message without generating a model answer. With passages, instructions require evidence-based answers, acknowledged gaps, and source identifiers. Unknown labels are flagged, never linked. Source panels use retrieved metadata rather than model-generated URLs.
 
 **Citations do not guarantee correctness.** Relevance thresholds and instructions cannot guarantee grounded answers. PDF text is untrusted context, but prompting alone cannot fully prevent prompt injection. The model has no shell, browsing, or file-writing tools.
 
 ## Backup and migration
 
-Use **Settings & backup → Download backup** as administrator. The archive contains a consistent SQLite snapshot, original documents, embeddings, account hashes, conversations, and a checksum manifest. Model weights are excluded.
+Use **Settings & backup → Download backup** as administrator. The archive contains a consistent SQLite snapshot, original documents, embeddings, account hashes, conversations, and a checksum manifest. GGUF weights, embedding model directories, and the host `.env` file are excluded. Sharing memberships and saved model profiles are included.
 
 Backups are **not encrypted**. Store them securely. Checksums detect corruption, not malicious replacement. Restore only archives from trusted installations.
 
@@ -240,7 +367,9 @@ After restore:
 3. Review model paths, allowed hosts, and HTTPS settings.
 4. Start services and sign in again; saved sessions were revoked.
 5. Use Models to review CPU/GPU/context settings; automatic loading was cleared.
-6. Reindex PDFs if the embedding model changed.
+6. Reindex documents if the embedding model changed.
+
+Restore also clears the model auto-load configuration and setup-test state, requeues interrupted indexing, and marks interrupted replies accordingly. Saved profiles remain available; review them for the new machine before loading a model. Restore is a CLI operation; the browser provides backup download, not a restore wizard.
 
 For Docker migration see [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -266,6 +395,127 @@ After dependencies/models are installed, local and LAN operation needs no Intern
 - Shared cPanel hosting is generally unsuitable for a resident native model; use a server where you control long-running processes and memory.
 
 See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for LAN, HTTPS, migration, and systemd.
+
+### LAN deployment
+
+For a native server at an example address of `192.168.1.50`, add that address to `.env`:
+
+~~~dotenv
+NELSON_ALLOWED_HOSTS=localhost,127.0.0.1,192.168.1.50
+~~~
+
+Then start:
+
+~~~bash
+python -m app.cli run --host 0.0.0.0 --port 8000
+~~~
+
+For Docker, also set `NELSON_BIND_ADDRESS=0.0.0.0`, then recreate the services. Browse to `http://192.168.1.50:8000` from an authorised device; replace the example IP with your server's address and configure its firewall accordingly. Plain HTTP does not encrypt credentials or document traffic; use HTTPS for networks where that is required.
+
+### HTTPS and service management
+
+The repository includes [a Caddy example](deploy/Caddyfile) and [API](deploy/nelsonict-ai.service) / [worker](deploy/nelsonict-worker.service) systemd units. Replace the sample domain and paths, create the service account, and grant it access to the data/model directories before installing the units.
+
+For a public domain, configure DNS, allow the domain in `NELSON_ALLOWED_HOSTS`, set `NELSON_COOKIE_SECURE=true`, and proxy to the loopback-bound application. The Caddy example allows a larger body specifically for model import; align proxy and application limits with your intended upload sizes. Keep response streaming enabled. See [deployment instructions](docs/DEPLOYMENT.md) for the complete procedure.
+
+GitHub hosts this source repository; GitHub Pages cannot run its Python API, SQLite database, or GGUF inference. Deploy the runtime on a suitable computer or server.
+
+## Security and data storage
+
+- Passwords are hashed with Argon2; session cookies are HTTP-only and SameSite Strict. HTTPS deployments must also enable secure cookies.
+- Authenticated mutations require the session's CSRF token. Login and initial setup require the application client header, and cross-site requests are checked.
+- Account and collection permissions are checked on retrieval, original downloads, and source previews. An application administrator does not automatically receive collection access through ordinary collection APIs.
+- Administrators can download a complete backup, and server operators can access stored data. This is not end-to-end encryption or protection from the machine's administrator.
+- SQLite contains account password hashes, sessions, knowledge membership, original documents, extracted passages, optional embedding vectors, assistants, conversations, and model settings/profiles. It is not encrypted by the application.
+- The database uses WAL, foreign keys, FTS5 indexes, and transactions. Keep it on persistent local storage. Use the snapshot backup command instead of copying only the live `.sqlite3` file while writes are occurring.
+- Uploads are bounded and filenames are constrained. Office archive limits and subprocess timeouts reduce resource exposure but do not replace operating-system memory limits.
+- GGUF inspection checks metadata and structure headers; it does not fully validate tensor payloads or guarantee that a model can load. A matching publisher SHA-256 verifies matching bytes, not the publisher's safety claims.
+- Removing a document or revoking access cannot retract excerpts already saved in another user's conversation or exported files.
+
+Do not commit `.env`, databases, backups, private documents, or model files. Use filesystem permissions and host/disk encryption appropriate to your deployment.
+
+## API reference
+
+Open `/docs` on your running instance for the local API reference and `/openapi.json` for the machine-readable schema. Documentation assets are served locally.
+
+| Area | Selected endpoints |
+|---|---|
+| Health and setup | `GET /api/health`, `GET /api/setup`, `POST /api/setup` |
+| Session | `POST /api/login`, `GET /api/me`, `POST /api/logout` |
+| Accounts (admin) | `GET/POST /api/users`, `POST /api/users/{id}/disable`, `POST /api/users/{id}/enable` |
+| Wizard (admin) | `GET /api/system/check`, `POST /api/system/model-test`, `POST /api/system/complete` |
+| Knowledge | `GET/POST /api/knowledge`, `DELETE /api/knowledge/{id}` |
+| Documents | `GET/POST /api/knowledge/{id}/documents`, `GET /api/documents/{id}/download`, `GET /api/documents/{id}/preview`, `POST /api/documents/{id}/reindex`, `DELETE /api/documents/{id}` |
+| Sharing (owner) | `GET/POST /api/knowledge/{id}/members`, `DELETE /api/knowledge/{id}/members/{member_id}` |
+| Assistants | `GET/POST /api/assistants`, `PUT/DELETE /api/assistants/{id}` |
+| Conversations | `GET/POST /api/conversations`, `PUT/DELETE /api/conversations/{id}`, `GET /api/conversations/{id}/messages`, `GET /api/conversations/{id}/export` |
+| Streaming chat | `POST /api/conversations/{id}/chat`, `POST /api/conversations/{id}/stop` |
+| Model management (admin) | `GET /api/models`, `POST /api/models/load`, `POST /api/models/unload`, `POST /api/models/import`, `GET /api/models/inspect` |
+| Profiles (admin) | `GET/POST /api/model-profiles`, `DELETE /api/model-profiles/{id}` |
+| Status and backup | `GET /api/status`, `GET /api/backup` (backup is admin-only) |
+
+### Request conventions
+
+1. Log in with a JSON username/password body and `X-Nelson-Client: web`; retain the returned `nelson_session` cookie and `csrf` value.
+2. Send the cookie on authenticated requests. For authenticated mutations, also send `X-Nelson-Client: web` and `X-CSRF-Token: <csrf value>`.
+3. For document upload, send raw file bytes, not multipart form data, and a URL-encoded `X-Filename` header.
+4. Model import uses raw bytes and `X-Filename`, with an optional expected hexadecimal `X-SHA256` value.
+5. Chat uses a streaming POST response, so clients should use streaming fetch or an equivalent HTTP client rather than native browser `EventSource`, which issues GET requests.
+
+Example chat JSON for an existing conversation and accessible collection (replace IDs):
+
+~~~json
+{
+  "content": "What are the main requirements in these documents?",
+  "mode": "documents",
+  "kb_id": 1,
+  "task": "question",
+  "document_ids": [1, 2]
+}
+~~~
+
+Use `task: "summary"` or `task: "compare"` for complete analysis. For general chat use `mode: "general"`, `task: "question"`, and omit collection/document selections. Streaming messages contain JSON event objects such as `sources`, `token`, `error`, and `done`; full analysis also reports progress. Handle errors after streaming starts as well as HTTP errors before the stream opens.
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---|---|
+| Model list is empty | Place a `.gguf` file in the configured models directory, or import it as administrator, then refresh. For Docker use the host `./models` bind mount. |
+| GGUF import permission error | Check directory ownership and permissions for the running service. Docker uses UID `10001`; give it write access to the model directory, or copy models manually. |
+| Import rejected / checksum mismatch | Confirm the upload limit, available staging space, expected publisher hash, valid GGUF metadata, and that the destination filename is not already present. Also check the reverse proxy body limit. |
+| Model load fails | Read the load error, check inference installation and model compatibility, lower context/GPU settings, and verify available memory. Metadata inspection alone does not prove a file loads. |
+| GPU detected but inference uses CPU | Install a native inference build for that accelerator. The default container is CPU-only; changing the layer count does not change its build. |
+| HTTP 409 / model busy | Wait for the active response or stop it. Model operations and generation are serialised; there is no waiting chat queue. |
+| Stop takes time | Cancellation waits for a native model step to return. Large prompt evaluation can delay it. |
+| Documents stay queued | Check worker logs and heartbeat. Start the worker with the same `.env` and data directory as the API. |
+| Document indexing fails | Inspect the document error; check format, encryption, OCR installation, page/row/size limits, memory, and indexing timeout. |
+| Scanned PDF produces little text | Install OCR requirements, Tesseract, and the selected language pack. Confirm scan quality; complex layouts may need preparation. |
+| DOCX/XLSX content appears missing | Only supported extracted text/cached cells are indexed. Recalculate and save spreadsheets externally; convert unsupported structures to a suitable PDF or text file. |
+| Answers say no supporting evidence | Confirm document status is Ready, correct collection and filters are selected, and the wording matches indexed content. Consider optional semantic search. |
+| Semantic fingerprint mismatch | Restart both services with the intended embedding model directory, then reindex affected documents. |
+| Full summary is too large | Select fewer documents or adjust `NELSON_MAX_SUMMARY_CHUNKS` with sufficient resources. Increasing the limit does not remove model-context or analysis-time constraints. |
+| PDF preview unavailable | Install `pypdfium2` through OCR requirements and check collection access. Non-PDF previews show extracted source text. |
+| Invalid host / HTTP 400 | Add the actual server hostname/IP to `NELSON_ALLOWED_HOSTS` and restart. |
+| Login succeeds but session is lost over HTTP | A secure cookie requires HTTPS. Use HTTPS or set `NELSON_COOKIE_SECURE=false` for a local HTTP installation. |
+| CSRF / HTTP 403 | Sign in again and send the current CSRF/client headers for API mutations; use the correct same-origin app URL. |
+| Sharing fails | Use an existing active account's exact username. Only the collection owner manages memberships. |
+| Duplicate-process lock error | Stop the existing API/worker and run exactly one of each per data directory. Do not enable multiple Uvicorn workers. |
+| Restore refuses destination | Select a new or empty directory. Restore deliberately does not overwrite an existing installation. |
+| Replies arrive all at once behind a proxy | Review proxy buffering and timeout settings; use the supplied streaming Caddy example. |
+
+Useful diagnostic commands:
+
+~~~bash
+# Docker services and recent logs
+docker compose ps
+docker compose logs --tail=100 app worker
+
+# Basic HTTP health (not proof that a model is loaded or the worker is healthy)
+curl --fail http://127.0.0.1:8000/api/health
+
+# Native command help
+python -m app.cli --help
+~~~
 
 ## Source structure
 
@@ -294,17 +544,39 @@ Implementation uses FastAPI, SQLite directly, and a self-contained JavaScript fr
 
 Version 1.1 local verification: **49 Python tests passed**, including the 24 original regression tests. DOM smoke checks passed for setup, navigation, profiles, sharing, document listing and summary selection. The browser preview could not connect to the local address, so visual rendering was not verified. Docker and real-GGUF/GPU testing remain unverified in this session; generation tests use a simulated model boundary.
 
-API documentation is at /docs. Mutations require a session cookie, X-Nelson-Client: web, and the X-CSRF-Token returned at login. Document uploads use raw file bytes and a URL-encoded X-Filename header. Model imports use the same header plus optional X-SHA256.
+See [API reference](#api-reference) for endpoint groups and authentication/upload conventions.
 
 ~~~bash
 pip install -r requirements-dev.txt
 python -m pytest -q
 node --check app/static/app.js
+node --check app/static/api-docs.js
 ~~~
 
-Tests use real generated PDFs and temporary databases. Generation is simulated to exercise streaming/failure paths without downloading a large model. Docker CI builds native inference/OCR dependencies and checks imports and HTTP startup. Resolved Python versions are recorded as an artifact. Bounded dependency ranges are not a complete transitive lockfile.
+Optional frontend DOM smoke checks on Linux/macOS with Node.js 22 and npm:
+
+~~~bash
+npm install --prefix /tmp/nelsonict-ui jsdom@30.0.1 --no-audit --no-fund
+NODE_PATH=/tmp/nelsonict-ui/node_modules node tests/ui-smoke.cjs
+~~~
+
+Node/npm are development-only dependencies. The installed application serves static frontend files directly.
+
+Tests use real generated PDFs and temporary databases. Generation is simulated to exercise streaming/failure paths without downloading a large model. The CI workflow is configured to build native inference/OCR dependencies and check imports and HTTP startup. At the last implementation verification, hosted Actions jobs failed before executing steps, so no successful hosted run or container verification is claimed; consult the workflow badge for current status. Resolved Python versions are recorded as an artifact. Bounded dependency ranges are not a complete transitive lockfile.
 
 **Not established by these checks:** your GGUF's answer quality, GPU compatibility, real scanned-PDF OCR accuracy, full semantic-model integration, browser visual rendering, or sustained multi-user load. Complete the [target-machine acceptance checklist](docs/ACCEPTANCE.md).
+
+## Contributing
+
+Use a feature branch and describe the problem, change, and verification in your pull request. Run the Python tests for backend changes and the JavaScript checks for frontend changes. Add regression coverage for permission, retrieval, migration, or streaming behaviour when changing those areas.
+
+Report reproducible problems through [GitHub Issues](https://github.com/edunelsonit/nelsonict-ai/issues). Include the operating system, Python/container version, installation method, relevant error, and steps to reproduce. Remove passwords, cookies, setup tokens, document contents, and other private data from reports. For inference failures, include model architecture/quantisation and hardware details without uploading the weights.
+
+Further documentation:
+
+- [Deployment, HTTPS, systemd, and Docker migration](docs/DEPLOYMENT.md)
+- [Version 1.1 upgrade and feature guide](docs/UPGRADE-1.1.md)
+- [Target-machine acceptance checklist](docs/ACCEPTANCE.md)
 
 ## Licence
 
