@@ -4,7 +4,7 @@
 - Load the intended GGUF and confirm streaming with a general question.
 - Restart and confirm saved configuration reloads.
 - Stop a long response and verify partial text is marked cancelled.
-- Attempt a second response and verify a busy message.
+- Submit another account’s response while one is running; verify waiting position, FIFO execution and cancellation.
 - Measure memory/latency with your context, CPU, and GPU settings.
 - Try a long question and confirm a bounded response or readable context error.
 
@@ -24,7 +24,7 @@
 - Reindex and verify normal retrieval.
 
 ## Access and recovery
-- Check two member accounts cannot access each other's documents, chats, or assistants.
+- Check two member accounts cannot access each other's private documents, chats, or assistants; verify explicitly shared collection permissions separately.
 - Disable an account and verify its existing session fails.
 - Restore a backup into a fresh directory/volume and verify PDFs/chats/accounts.
 - Verify restored sessions are revoked and model settings need review.

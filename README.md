@@ -6,8 +6,24 @@
 
 **Version 1.2 adds options 6–10:** guided restore and migration, a multiple-user request queue, answer feedback and evaluation, Windows/Ubuntu desktop packaging, and a website widget for approved public information. Start with the [1.2 guide](docs/UPGRADE-1.2.md), [desktop packaging](docs/DESKTOP.md), or [website integration](docs/WEBSITE.md).
 
+## Documentation
+
+| Guide | Covers |
+|---|---|
+| [Documentation index](docs/README.md) | Starting paths, version distinctions and verification status. |
+| [User guide](docs/USER-GUIDE.md) | Chat, document analysis, sources, sharing, assistants and evaluation. |
+| [Administrator guide](docs/ADMIN-GUIDE.md) | Accounts, models, queues, backups, recovery and routine operation. |
+| [Architecture](docs/ARCHITECTURE.md) | Processes, SQLite, retrieval, migration and public/private boundaries. |
+| [API guide](docs/API.md) | Authentication, endpoint groups, raw uploads, streaming and a Python client. |
+| [Deployment](docs/DEPLOYMENT.md) | LAN, HTTPS, systemd, Docker and effective configuration. |
+| [Desktop installation](docs/DESKTOP.md) | Windows/Ubuntu builds, shortcuts, startup and updates. |
+| [Website integration](docs/WEBSITE.md) | Approved public documents and embedding on nelsonict.com.ng. |
+
+Version 1.2 is proposed in [PR #1](https://github.com/edunelsonit/nelsonict-ai/pull/1). Use its feature branch to review the implementation until it is merged. Installer workflows are provided; a successful Windows build and live website deployment are not yet verified.
+
 ## Contents
 
+- [Documentation](#documentation)
 - [Features](#included)
 - [Requirements](#requirements)
 - [Docker quick start](#quick-start--docker-cpu)
@@ -15,7 +31,7 @@
 - [Windows and macOS](#windows-and-macos)
 - [First-run setup and daily use](#first-run-setup-and-daily-use)
 - [Configuration reference](#configuration-reference)
-- [Upgrading from 1.0](#upgrading-from-10)
+- [Upgrading from 1.0 or 1.1](#upgrading-from-10-or-11)
 - [GGUF models and hardware](#gguf-models-and-hardware)
 - [Document knowledge and sharing](#document-knowledge)
 - [Optional semantic search](#optional-semantic-search)
@@ -42,7 +58,11 @@
 - Follow-up questions, full-document summaries, comparisons, and clickable source previews.
 - PDF, DOCX, TXT, Markdown, CSV and XLSX ingestion, plus optional PDF OCR and a durable processing queue.
 - SQLite FTS5 keyword retrieval; optional local semantic embeddings and hybrid search.
-- Downloadable consistent backups and offline restore into a new data directory.
+- Downloadable consistent backups, guided restore with target-setting review, and offline restore.
+- Bounded multiple-user request queue with waiting positions, cancellation and administrator pause/resume.
+- Opt-in answer feedback, repeatable evaluation question sets, human reviews and JSON exports.
+- Desktop launcher and Windows/Ubuntu installer build workflows.
+- Embeddable website assistant limited to explicitly approved public documents.
 - Native installation, Docker Compose, Caddy/systemd examples, and automated tests.
 
 **PDF “training” means retrieval-augmented generation (RAG).** Uploading PDFs does not change GGUF model weights. Relevant passages are supplied to the model at question time. Fine-tuning, LoRA training, and model conversion are not included.
@@ -246,11 +266,11 @@ For native installation, choose the listening address with `python -m app.cli ru
 | Temperature | `0.3` | 0–1.5. |
 | Chat format | blank | Use GGUF metadata unless a compatible explicit override is needed. |
 
-## Upgrading from 1.0
+## Upgrading from 1.0 or 1.1
 
 Back up and stop the old API/worker, pull this release, install the updated requirements (or rebuild Docker), then restart. Schemas v1 and v2 migrate transactionally to v3; existing PDF files, accounts, chats and embeddings are retained. Do not run old code against a migrated database. Retain your pre-upgrade backup for rollback. Restore accepts schema versions 1, 2 and 3.
 
-See [the 1.1 upgrade guide](docs/UPGRADE-1.1.md) for new controls and migration details.
+See [the 1.2 upgrade guide](docs/UPGRADE-1.2.md) for current migration and feature instructions; [the 1.1 guide](docs/UPGRADE-1.1.md) retains the earlier options 1–5 notes.
 
 ## GGUF models and hardware
 
@@ -362,7 +382,7 @@ In document-question mode, if no supporting passages are found, the app returns 
 
 ## Backup and migration
 
-Use **Settings & backup → Download backup** as administrator. The archive contains a consistent SQLite snapshot, original documents, embeddings, account hashes, conversations, and a checksum manifest. GGUF weights, embedding model directories, and the host `.env` file are excluded. Sharing memberships and saved model profiles are included.
+Use **Settings & backup → Download backup** as administrator. The archive contains a consistent SQLite snapshot, original documents, embeddings, account hashes, conversations, and a checksum manifest. GGUF weights, embedding model directories, the host `.env` file, and external migration runtime-overlay files are excluded. Sharing memberships and saved model profiles are included.
 
 Backups are **not encrypted**. Store them securely. Checksums detect corruption, not malicious replacement. Restore only archives from trusted installations.
 
@@ -374,8 +394,9 @@ python -m app.cli restore backups/nelsonict-backup.zip --destination data-restor
 
 Stop services before restoring. Restore checks archive entries, checksum, database integrity, foreign keys, and schema. It requires a new/empty destination and never overwrites an existing installation. The current limit is **2 GiB uncompressed database data**.
 
-After restore:
-1. Set NELSON_DATA_DIR=data-restored in .env.
+After the **offline CLI restore** shown above:
+
+1. Set NELSON_DATA_DIR=data-restored in .env, keeping both processes on the same configuration.
 2. Copy GGUF and embedding folders.
 3. Review model paths, allowed hosts, and HTTPS settings.
 4. Start services and sign in again; saved sessions were revoked.
@@ -449,7 +470,7 @@ Do not commit `.env`, databases, backups, private documents, or model files. Use
 
 ## API reference
 
-Open `/docs` on your running instance for the local API reference and `/openapi.json` for the machine-readable schema. Documentation assets are served locally.
+Open `/docs` on your running instance for the local API reference and `/openapi.json` for the machine-readable schema. Documentation assets are served locally. The [API guide](docs/API.md) includes all version 1.2 endpoint groups, permissions and a streaming Python example.
 
 | Area | Selected endpoints |
 |---|---|
