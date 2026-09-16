@@ -14,8 +14,8 @@ def main():
     parser = argparse.ArgumentParser(description="Nelsonict AI administration")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="Start the web app and PDF worker")
-    run.add_argument("--host", default="127.0.0.1")
-    run.add_argument("--port", type=int, default=8000)
+    run.add_argument("--host", default=None)
+    run.add_argument("--port", type=int, default=None)
     sub.add_parser("setup-token", help="Show local first-run setup token")
     backup = sub.add_parser("backup")
     backup.add_argument("file", type=Path)
@@ -59,28 +59,73 @@ def main():
             conn.execute("DELETE FROM sessions WHERE user_id=?", (row["id"],))
         print("Password updated; existing sessions revoked.")
     else:
+        import json
+        root = settings.launch_root or settings.data_dir.resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        restart_file, stop_file = root / "restart.request", root / "stop.request"
+        stop_file.unlink(missing_ok=True)
+        os.environ["NELSON_MANAGED_LAUNCH"] = "1"
         processes = []
-        def stop(*_):
-            for process in processes:
-                if process.poll() is None:
-                    process.terminate()
+
+        def stop_children():
+            import psutil
+            descendants=[]
             for process in processes:
                 try:
-                    process.wait(timeout=10)
+                    descendants.extend(psutil.Process(process.pid).children(recursive=True))
+                except psutil.NoSuchProcess:
+                    pass
+                if process.poll() is None:
+                    process.terminate()
+            for process in descendants:
+                try: process.terminate()
+                except psutil.NoSuchProcess: pass
+            for process in processes:
+                try:
+                    process.wait(timeout=15)
                 except subprocess.TimeoutExpired:
                     process.kill()
+                    process.wait()
+            _, alive = psutil.wait_procs(descendants, timeout=3)
+            for process in alive:
+                try: process.kill()
+                except psutil.NoSuchProcess: pass
+            processes.clear()
+
+        def stop(*_):
+            stop_children()
             raise SystemExit(0)
         signal.signal(signal.SIGINT, stop)
         signal.signal(signal.SIGTERM, stop)
         try:
-            processes.append(subprocess.Popen([sys.executable, "-m", "app.worker"]))
-            processes.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app",
-                                               "--host", args.host, "--port", str(args.port), "--workers", "1"]))
-            print(f"Nelsonict AI: http://{args.host}:{args.port}", flush=True)
-            while all(p.poll() is None for p in processes):
-                time.sleep(1)
+            while True:
+                restart_file.unlink(missing_ok=True)
+                config_path = root / "runtime-settings.json"
+                overlay = json.loads(config_path.read_text()) if config_path.exists() else {}
+                host = args.host or overlay.get("bind_host", settings.bind_host)
+                port = args.port or overlay.get("bind_port", settings.bind_port)
+                if getattr(sys, "frozen", False):
+                    worker = [sys.executable, "--worker"]
+                    api = [sys.executable, "--api", host, str(port)]
+                else:
+                    worker = [sys.executable, "-m", "app.worker"]
+                    api = [sys.executable, "-m", "uvicorn", "app.main:app", "--host", host, "--port", str(port), "--workers", "1"]
+                processes.append(subprocess.Popen(worker))
+                processes.append(subprocess.Popen(api))
+                print(f"Nelsonict AI: http://{host}:{port}", flush=True)
+                while all(p.poll() is None for p in processes):
+                    if stop_file.exists():
+                        stop_file.unlink(missing_ok=True)
+                        stop()
+                    if restart_file.exists():
+                        break
+                    time.sleep(0.5)
+                restarting = restart_file.exists()
+                stop_children()
+                if not restarting:
+                    break
         finally:
-            stop()
+            stop_children()
 
 
 if __name__ == "__main__":

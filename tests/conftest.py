@@ -10,6 +10,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_dir", tmp_path / "data")
     monkeypatch.setattr(settings, "models_dir", tmp_path / "models")
     monkeypatch.setattr(settings, "embedding_model", "")
+    monkeypatch.setattr(settings, "launch_root", tmp_path / "data")
+    from app.request_queue import scheduler
+    assert not scheduler.items
+    scheduler.paused = False
     runtime.model = None
     runtime.config = None
     runtime.error = None

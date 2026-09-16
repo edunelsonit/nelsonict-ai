@@ -1,8 +1,10 @@
-# Nelsonict AI 1.1
+# Nelsonict AI 1.2
 
 **A private, deployable chatbot for Nelsonict Services Limited.** Run a compatible GGUF language model on your own computer or server, upload document knowledge, and keep accounts, conversations, original documents, extracted passages, and embeddings in SQLite.
 
 [![Application checks](https://github.com/edunelsonit/nelsonict-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/edunelsonit/nelsonict-ai/actions/workflows/ci.yml)
+
+**Version 1.2 adds options 6–10:** guided restore and migration, a multiple-user request queue, answer feedback and evaluation, Windows/Ubuntu desktop packaging, and a website widget for approved public information. Start with the [1.2 guide](docs/UPGRADE-1.2.md), [desktop packaging](docs/DESKTOP.md), or [website integration](docs/WEBSITE.md).
 
 ## Contents
 
@@ -45,7 +47,7 @@
 
 **PDF “training” means retrieval-augmented generation (RAG).** Uploading PDFs does not change GGUF model weights. Relevant passages are supplied to the model at question time. Fine-tuning, LoRA training, and model conversion are not included.
 
-### New in 1.1
+### Features added in 1.1 and 1.2
 
 | Update | What you can do |
 |---|---|
@@ -54,6 +56,11 @@
 | 3. More document formats | Add DOCX, TXT, Markdown, CSV, and XLSX alongside PDF and optional scanned-PDF OCR. |
 | 4. Model management | Import GGUF files in the browser, check SHA-256 values, inspect metadata, and save configuration profiles. |
 | 5. Shared knowledge | Give existing users reader or editor access to selected knowledge bases. |
+| 6. GUI migration | Upload and validate a backup, review target paths/network/hardware, and activate the restored data on restart. |
+| 7. Request queue | See waiting positions, cancel requests, and let administrators pause admission while controls stay responsive. |
+| 8. Feedback and evaluation | Flag answers, maintain repeatable question sets, run local checks, and record human pass/fail reviews. |
+| 9. Desktop packages | Build Windows and Ubuntu installers with shortcuts, sign-in startup, and launcher update controls. |
+| 10. Website integration | Embed an anonymous chatbot backed by separately approved public documents. |
 
 ## Requirements
 
@@ -215,6 +222,12 @@ Copy `.env.example` to `.env` in the project directory. Restart both the app and
 | `NELSON_BIND_ADDRESS` | `127.0.0.1` | Compose host-side listening address; not a native CLI bind setting. |
 | `NELSON_PORT` | `8000` | Compose published host port; not a native CLI port setting. |
 | `WITH_SEMANTIC` | `false` | Optional Compose build argument; add to `.env` to include semantic dependencies. |
+| `NELSON_QUEUE_LIMIT` | `32` | Maximum total admitted model requests. |
+| `NELSON_QUEUE_PER_USER` | `2` | Maximum requests per account; anonymous public requests share slot 0. |
+| `NELSON_QUEUE_TIMEOUT` | `600` | Maximum queue waiting time in seconds. |
+| `NELSON_MAX_BACKUP_MB` | `2048` | Maximum guided-restore archive upload in MiB. |
+| `NELSON_BIND_HOST` | `127.0.0.1` | Default native managed-launch address. |
+| `NELSON_BIND_PORT` | `8000` | Default native managed-launch port. |
 
 Size settings labelled MB are implemented using 1,024 × 1,024 bytes. Original-file quotas do not cap the complete database size: extracted text, vectors, conversations, and SQLite overhead consume additional storage.
 
@@ -235,7 +248,7 @@ For native installation, choose the listening address with `python -m app.cli ru
 
 ## Upgrading from 1.0
 
-Back up and stop the old API/worker, pull this release, install the updated requirements (or rebuild Docker), then restart. Schema v1 migrates transactionally to v2; existing PDF files, accounts, chats and embeddings are retained. Do not run old code against a migrated database. Retain your pre-upgrade backup for rollback. The restore command accepts both schema versions.
+Back up and stop the old API/worker, pull this release, install the updated requirements (or rebuild Docker), then restart. Schemas v1 and v2 migrate transactionally to v3; existing PDF files, accounts, chats and embeddings are retained. Do not run old code against a migrated database. Retain your pre-upgrade backup for rollback. Restore accepts schema versions 1, 2 and 3.
 
 See [the 1.1 upgrade guide](docs/UPGRADE-1.1.md) for new controls and migration details.
 
@@ -255,7 +268,7 @@ The operator supplies model files. Choose a model supported by the installed inf
 - The default Docker image is CPU-only. GPU layer settings do not add GPU support.
 - Native NVIDIA/Metal/Vulkan acceleration requires the corresponding inference build.
 - Account for weights, context cache, OCR, and optional embedding-model memory.
-- One response runs at a time. Additional requests get HTTP 409 with a busy message; chat queuing is not included.
+- One response runs at a time through a bounded FIFO queue. Waiting positions and cancellation are available; administrators can pause admission. See [request queue behaviour](docs/UPGRADE-1.2.md#7-multiple-user-request-queue).
 - Stop requests are checked between model steps. Long prompt evaluation/native calls may delay cancellation.
 - Generation has a five-minute cooperative timeout. Partial output is saved after cancellation/errors.
 - Context budgeting reserves room for the answer and template overhead; long prompts produce a clear error.
@@ -264,7 +277,7 @@ Inference runs on the **host computer/server**, not the visitor's browser.
 
 ## Document knowledge
 
-Conversations and assistants remain personal. Collections are private by default. Their owner can grant access to existing accounts through **Knowledge → Share this knowledge base**:
+Conversations and assistants remain personal. Submitting answer feedback explicitly shares that answer and its cited excerpts with administrators. Collections are private by default. Their owner can grant access to existing accounts through **Knowledge → Share this knowledge base**:
 
 | Role | Ask/search/download/preview | Upload/reindex | Delete documents/collection | Manage sharing |
 |---|---|---|---|---|
@@ -369,7 +382,7 @@ After restore:
 5. Use Models to review CPU/GPU/context settings; automatic loading was cleared.
 6. Reindex documents if the embedding model changed.
 
-Restore also clears the model auto-load configuration and setup-test state, requeues interrupted indexing, and marks interrupted replies accordingly. Saved profiles remain available; review them for the new machine before loading a model. Restore is a CLI operation; the browser provides backup download, not a restore wizard.
+Restore also clears the model auto-load configuration and setup-test state, requeues interrupted indexing, and marks interrupted replies accordingly. Saved profiles remain available; review them for the new machine before loading a model. The browser now also provides a guided restore workflow with validation, target-setting review and activation on restart. See [guided migration](docs/UPGRADE-1.2.md#6-guided-backup-and-migration).
 
 For Docker migration see [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -485,7 +498,7 @@ Use `task: "summary"` or `task: "compare"` for complete analysis. For general ch
 | Import rejected / checksum mismatch | Confirm the upload limit, available staging space, expected publisher hash, valid GGUF metadata, and that the destination filename is not already present. Also check the reverse proxy body limit. |
 | Model load fails | Read the load error, check inference installation and model compatibility, lower context/GPU settings, and verify available memory. Metadata inspection alone does not prove a file loads. |
 | GPU detected but inference uses CPU | Install a native inference build for that accelerator. The default container is CPU-only; changing the layer count does not change its build. |
-| HTTP 409 / model busy | Wait for the active response or stop it. Model operations and generation are serialised; there is no waiting chat queue. |
+| Queue full / model busy | Wait or cancel an earlier request. Administrators can pause admission and cancel active work before changing models. Model changes still require an idle model. |
 | Stop takes time | Cancellation waits for a native model step to return. Large prompt evaluation can delay it. |
 | Documents stay queued | Check worker logs and heartbeat. Start the worker with the same `.env` and data directory as the API. |
 | Document indexing fails | Inspect the document error; check format, encryption, OCR installation, page/row/size limits, memory, and indexing timeout. |
@@ -533,7 +546,12 @@ python -m app.cli --help
 | app/machine.py | Hardware/dependency and GGUF metadata inspection |
 | app/worker.py | Persistent queue and subprocess timeouts |
 | app/maintenance.py | Snapshot and validated restore |
-| app/cli.py | Start, setup, backup, restore, password recovery |
+| app/cli.py | Start, managed restart, setup, backup, restore, password recovery |
+| app/migration.py | Staged GUI restore and restart-time configuration |
+| app/request_queue.py / app/operations.py | FIFO admission, cancellation, queue administration |
+| app/quality.py | Answer feedback, evaluation questions/runs and human reviews |
+| app/public_widget.py | Separate public collection approval and anonymous widget |
+| app/desktop.py / packaging/ | Desktop launcher and Windows/Ubuntu installer builds |
 | app/static/ | HTML/CSS/JavaScript application |
 | tests/ | API, isolation, retrieval, streaming, recovery tests |
 | deploy/ | Proxy and service examples |
@@ -542,7 +560,7 @@ Implementation uses FastAPI, SQLite directly, and a self-contained JavaScript fr
 
 ## Development and verification
 
-Version 1.1 local verification: **49 Python tests passed**, including the 24 original regression tests. DOM smoke checks passed for setup, navigation, profiles, sharing, document listing and summary selection. The browser preview could not connect to the local address, so visual rendering was not verified. Docker and real-GGUF/GPU testing remain unverified in this session; generation tests use a simulated model boundary.
+Version 1.2 local verification: **69 Python tests passed**, including the original regression suite and new migration, queue, feedback, evaluation, public-isolation and managed-restart tests. Extended frontend DOM smoke checks passed. See [the 1.2 guide](docs/UPGRADE-1.2.md) for the added workflows. The browser preview could not connect to the local address, so visual rendering was not verified. Docker and real-GGUF/GPU testing remain unverified; generation tests use a simulated model boundary.
 
 See [API reference](#api-reference) for endpoint groups and authentication/upload conventions.
 
@@ -560,6 +578,8 @@ npm install --prefix /tmp/nelsonict-ui jsdom@30.0.1 --no-audit --no-fund
 NODE_PATH=/tmp/nelsonict-ui/node_modules node tests/ui-smoke.cjs
 ~~~
 
+The desktop and public-integration routes are listed in the [1.2 API guide](docs/UPGRADE-1.2.md#new-api-groups).
+
 Node/npm are development-only dependencies. The installed application serves static frontend files directly.
 
 Tests use real generated PDFs and temporary databases. Generation is simulated to exercise streaming/failure paths without downloading a large model. The CI workflow is configured to build native inference/OCR dependencies and check imports and HTTP startup. At the last implementation verification, hosted Actions jobs failed before executing steps, so no successful hosted run or container verification is claimed; consult the workflow badge for current status. Resolved Python versions are recorded as an artifact. Bounded dependency ranges are not a complete transitive lockfile.
@@ -576,6 +596,9 @@ Further documentation:
 
 - [Deployment, HTTPS, systemd, and Docker migration](docs/DEPLOYMENT.md)
 - [Version 1.1 upgrade and feature guide](docs/UPGRADE-1.1.md)
+- [Version 1.2 upgrade and options 6–10](docs/UPGRADE-1.2.md)
+- [Desktop installers and updates](docs/DESKTOP.md)
+- [Website embedding and public approval](docs/WEBSITE.md)
 - [Target-machine acceptance checklist](docs/ACCEPTANCE.md)
 
 ## Licence

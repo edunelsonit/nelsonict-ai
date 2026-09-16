@@ -44,3 +44,14 @@ Automated tests simulate generation and do not establish hardware compatibility,
 - Grant reader then editor access; verify edit controls and backend permissions.
 - Revoke sharing and confirm new retrieval/downloads stop; historical chat excerpts remain.
 - Upgrade a backup of the v1 database and compare document/chat counts.
+
+## Version 1.2 additions
+
+- Back up a small populated installation; upload it through guided restore and confirm the running database is unchanged before activation.
+- Review target model/embedding directories, hostnames, listen settings and CPU/context/GPU suggestions. Restart both services and verify the restored account, document indexing, and model test. Verify the previous data folder remains recoverable.
+- Occupy the model with one request and queue requests from two accounts. Confirm ordering, visible positions, waiting cancellation, active cancellation and admin pause/resume. Revoking collection access must prevent a waiting request from retrieving its data.
+- Submit answer feedback only after acknowledging administrator access; verify a different account cannot report someone else's answer.
+- Save and run a question set; compare expected facts and source passages, mark pass/fail, export results, change a saved question and verify the old run remains unchanged.
+- Create a public assistant, approve only selected ready documents, and confirm private/unapproved documents never appear as evidence. Disable publication and test on the actual website's allowed origin.
+- Install desktop packages on clean target operating systems. Check shortcuts, setup-token copying, model loading, real document processing, sign-in startup, stop/restart, upgrade and uninstall. Confirm per-user data remains after package replacement.
+- Run `python tests/frozen_smoke.py <path-to-frozen-executable>` to test the frozen API/worker/indexer before creating an installer. This still does not validate real GGUF generation or graphical launcher rendering.

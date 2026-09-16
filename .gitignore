@@ -11,3 +11,7 @@ backups/
 *.sqlite*
 *.gguf
 *.zip
+
+build/
+dist/
+*.spec

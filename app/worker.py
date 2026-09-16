@@ -25,7 +25,9 @@ def run():
             if identifier is None:
                 time.sleep(2)
                 continue
-            process = subprocess.Popen([sys.executable, "-m", "app.index_document", str(identifier)])
+            command = ([sys.executable, "--index", str(identifier)] if getattr(sys, "frozen", False)
+                       else [sys.executable, "-m", "app.index_document", str(identifier)])
+            process = subprocess.Popen(command)
             started = time.monotonic()
             try:
                 while process.poll() is None:

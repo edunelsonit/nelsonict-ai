@@ -49,7 +49,7 @@ function selectOptions(id, items, placeholder) {
 function showView(view) {
   document.querySelectorAll(".view").forEach(el => el.hidden = el.id !== "view-" + view);
   document.querySelectorAll("[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
-  $("view-title").textContent = {chat:"Chat",knowledge:"Knowledge",assistants:"Assistants",models:"Models",settings:"Settings & backup",wizard:"Setup wizard"}[view];
+  $("view-title").textContent = {chat:"Chat",knowledge:"Knowledge",assistants:"Assistants",models:"Models",settings:"Settings & backup",wizard:"Setup wizard",quality:"Quality & evaluation",operations:"Operations & website"}[view];
 }
 document.querySelectorAll("[data-view]").forEach(el => el.addEventListener("click", async () => {
   showView(el.dataset.view);
@@ -99,7 +99,10 @@ async function openConversation(id) {
   await refreshChatDocuments();
   const rows = await api("/conversations/" + id + "/messages");
   $("messages").replaceChildren();
-  rows.forEach(row => message(row.role, row.content, row.sources, row.status));
+  rows.forEach(row => {
+    const rendered=message(row.role,row.content,row.sources,row.status);
+    if(row.role==='assistant' && row.status!=='generating' && typeof addFeedbackControls==='function') addFeedbackControls(rendered.article,row.id);
+  });
   renderConversations(); showView("chat");
   $("messages").scrollTop = $("messages").scrollHeight;
 }
@@ -259,6 +262,7 @@ on("chat-form","submit",async e=>{
         if(event.type==="token") output.text.textContent+=event.text;
         if(event.type==="sources") renderSources(output.article,event.sources);
         if(event.type==="error") notify(event.message);
+        if(event.type==="queue") $("chat-hint").textContent=event.message;
         if(event.type==="progress") $("chat-hint").textContent=event.message;
       }
       $("messages").scrollTop=$("messages").scrollHeight;

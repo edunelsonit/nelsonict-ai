@@ -199,7 +199,7 @@ def test_v1_migration_preserves_data_and_is_repeatable(tmp_path,monkeypatch):
     assert db.one('SELECT format,pdf FROM documents')['format']=='pdf'
     assert db.one('SELECT pdf FROM documents')['pdf']==b'%PDF'
     with db.connect() as conn:
-        assert conn.execute('PRAGMA user_version').fetchone()[0]==2
+        assert conn.execute('PRAGMA user_version').fetchone()[0]==3
         assert not conn.execute('PRAGMA foreign_key_check').fetchall()
 
 

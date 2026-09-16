@@ -1,0 +1,55 @@
+name: Desktop installers
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'packaging/**'
+      - 'requirements*.txt'
+      - '.github/workflows/packages.yml'
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk libgl1 libx11-6 libxext6 libxrender1 libfontconfig1 libfreetype6
+      - name: Install Python and native dependencies
+        run: python -m pip install -r requirements-packaging.txt
+        env:
+          CMAKE_ARGS: '-DGGML_NATIVE=OFF'
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      - name: Freeze desktop application
+        run: python packaging/build.py
+      - name: Smoke test Linux executable
+        if: runner.os == 'Linux'
+        run: python tests/frozen_smoke.py dist/nelsonict-ai/nelsonict-ai
+      - name: Smoke test Windows executable
+        if: runner.os == 'Windows'
+        run: python tests/frozen_smoke.py dist/nelsonict-ai/nelsonict-ai.exe
+      - name: Build Ubuntu installer
+        if: runner.os == 'Linux'
+        run: bash packaging/linux/build-deb.sh
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging/windows/installer.iss'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nelsonict-ai-${{ runner.os }}
+          path: |
+            dist/installers/*.exe
+            dist/*.deb
+          if-no-files-found: error

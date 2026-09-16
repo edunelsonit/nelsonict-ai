@@ -1,0 +1,4 @@
+-r requirements.txt
+-r requirements-inference.txt
+-r requirements-ocr.txt
+pyinstaller>=6.11,<7

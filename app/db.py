@@ -76,7 +76,7 @@ def initialize():
     settings.models_dir.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version > 2:
+        if version > 3:
             raise RuntimeError("Database belongs to a newer Nelsonict AI release.")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
@@ -93,7 +93,9 @@ def initialize():
         columns = {r[1] for r in conn.execute("PRAGMA table_info(messages)")}
         if "knowledge_id" not in columns:
             conn.execute("ALTER TABLE messages ADD COLUMN knowledge_id INTEGER")
-        conn.execute("PRAGMA user_version=2")
+        for statement in EXTENSIONS:
+            conn.execute(statement)
+        conn.execute("PRAGMA user_version=3")
 
 
 def rows(sql, params=()):
@@ -124,3 +126,12 @@ def set_setting(key, value):
 def audit(action, actor):
     # Administrative metadata only: never log credentials or document text.
     set_setting("last_admin_action", {"action": action, "actor": actor, "at": time.time()})
+
+
+EXTENSIONS = [
+"CREATE TABLE IF NOT EXISTS feedback (message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), rating TEXT NOT NULL CHECK(rating IN ('helpful','incorrect')), note TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(message_id,user_id))",
+"CREATE TABLE IF NOT EXISTS eval_questions (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), kb_id INTEGER NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE, question TEXT NOT NULL, expected TEXT NOT NULL)",
+"CREATE TABLE IF NOT EXISTS eval_runs (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), status TEXT NOT NULL, config TEXT NOT NULL, results TEXT NOT NULL DEFAULT '[]', created REAL NOT NULL)",
+"CREATE TABLE IF NOT EXISTS public_sites (id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id), kb_id INTEGER NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE, name TEXT NOT NULL, origins TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0)",
+"CREATE TABLE IF NOT EXISTS public_documents (site_id INTEGER NOT NULL REFERENCES public_sites(id) ON DELETE CASCADE, document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, sha256 TEXT NOT NULL, PRIMARY KEY(site_id,document_id))"
+]
