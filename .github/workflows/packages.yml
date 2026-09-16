@@ -1,6 +1,12 @@
 name: Desktop installers
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'packaging/**'
+      - 'requirements*.txt'
+      - '.github/workflows/packages.yml'
   push:
     tags: ['v*']
     branches: [main]
