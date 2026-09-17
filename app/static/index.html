@@ -66,8 +66,10 @@
  <div class="knowledge-layout"><div id="knowledge-list" class="card"></div>
  <div><div class="card upload-card"><span class="eyebrow">DOCUMENT KNOWLEDGE</span><h2 id="kb-title">Select a knowledge base</h2>
  <p>PDF, Word (DOCX), text, Markdown, CSV, and Excel (XLSX). Processing runs in the background.</p>
- <label class="upload-zone">＋ Choose documents<input type="file" id="pdf-files" accept=".pdf,.docx,.txt,.md,.csv,.xlsx" multiple></label>
- <div class="row"><small id="worker-state">Checking PDF worker…</small><button id="delete-kb" class="quiet danger">Delete knowledge base</button></div>
+ <label>Upload format<select id="upload-format"><option value="all">All supported documents</option><option value="docx">Word documents (.docx)</option><option value="csv">CSV tables (.csv)</option><option value="pdf">PDF documents (.pdf)</option><option value="text">Text and Markdown (.txt, .md)</option><option value="xlsx">Excel workbooks (.xlsx)</option></select></label>
+ <label class="upload-zone"><span id="upload-label">＋ Choose documents</span><input type="file" id="pdf-files" accept=".pdf,.docx,.txt,.md,.csv,.xlsx" aria-describedby="upload-help" multiple></label>
+ <p id="upload-help" class="muted" aria-live="polite">Choose Word, CSV, PDF, text, Markdown, or Excel files. Wait for Ready before asking questions.</p>
+ <div class="row"><small id="worker-state">Checking document worker…</small><button id="delete-kb" class="quiet danger">Delete knowledge base</button></div>
  </div><div id="sharing-card" class="card" hidden><h2>Share this knowledge base</h2><p>Grant access to an existing account. Readers can ask questions and view sources. Editors can also upload and reindex.</p><form id="share-form" class="row"><label>Username<input id="share-username" required minlength="3"></label><label>Permission<select id="share-permission"><option value="reader">Reader</option><option value="editor">Editor</option></select></label><button class="primary">Grant access</button></form><div id="member-list"></div></div><div id="document-list"></div></div></div>
  </section>
  <section id="view-assistants" class="view" hidden>

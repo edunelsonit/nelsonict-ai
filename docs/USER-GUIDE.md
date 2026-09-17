@@ -24,7 +24,7 @@ You can rename a conversation, export its messages as JSON, or delete it. Stop a
 
 ## Create document knowledge
 
-Open **Knowledge**, create a knowledge base, and upload supported documents. A knowledge base is a collection used to scope retrieval.
+Open **Knowledge**, create a knowledge base, and upload supported documents. Use **Upload format → Word documents (.docx)** or **CSV tables (.csv)** to filter the file picker and see format-specific preparation tips. Leave **All supported documents** selected to upload a mixed group of files. A knowledge base is a collection used to scope retrieval.
 
 | Format | Preparation and source references |
 |---|---|
