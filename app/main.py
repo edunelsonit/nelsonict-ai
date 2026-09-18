@@ -18,6 +18,7 @@ from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import db
 from .features import router as feature_router
+from .model_downloads import router as download_router, downloads
 from .config import settings
 from .inference import runtime
 from .request_queue import scheduler
@@ -63,6 +64,7 @@ async def lifespan(app):
                     log.error("Saved model could not load; see Models in the administrator dashboard.")
         task = asyncio.create_task(asyncio.to_thread(autoload))
         yield
+        downloads.shutdown()
         for item in scheduler.snapshot()["requests"]:
             scheduler.cancel(item["key"])
         for _, stop in list(runtime.active.values()):
@@ -74,6 +76,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Nelsonict AI", version="1.2.0", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.include_router(feature_router)
+app.include_router(download_router)
 from .migration import router as migration_router
 from .quality import router as quality_router
 from .operations import router as queue_router

@@ -109,3 +109,7 @@ For native managed launch use the GUI restart control or stop/start `python -m a
 Back up, stop both services, update code/dependencies or rebuild containers, restart, then complete the [acceptance checklist](ACCEPTANCE.md). Schema 1/2 upgrades to schema 3; old code must not be run against the migrated database. Preserve the pre-upgrade backup and matching source version for rollback.
 
 Desktop updates are operator-installed. **Check for updates** opens the official release page; the launcher does not silently download or execute installers. See [desktop packaging](DESKTOP.md) for platform requirements and validation limits.
+
+## Online model downloads
+
+Open **Models → Download a GGUF model** to download public Hugging Face files or direct HTTPS links. Progress, cancellation and optional SHA-256 verification are provided. See [model downloads](MODEL-DOWNLOADS.md) for instructions, API details and limits.

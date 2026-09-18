@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#0b1525">
 <title>Nelsonict AI · Your knowledge, locally</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/operations.js"></script>
+<link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/operations.js"></script><script defer src="/model-downloads.js"></script>
 </head>
 <body>
 <div id="auth" class="auth-wrap">
@@ -84,6 +84,13 @@
  </section>
  <section id="view-models" class="view" hidden>
  <div class="section-heading"><div><h1>Intelligence on your terms.</h1><p>Load a compatible instruction-tuned GGUF model from the server’s models folder.</p></div><button id="refresh-models">Refresh files</button></div>
+ <div class="card"><h2>Download a GGUF model</h2><p>Download a public model directly to this server. You can keep using the workspace while it downloads.</p>
+ <form id="model-download-form"><label>Download source<select id="download-source"><option value="huggingface">Hugging Face repository</option><option value="url">Direct HTTPS file URL</option></select></label>
+ <div id="download-hf-fields" class="two-column"><label>Repository (owner/model)<input id="download-repo" placeholder="publisher/model-GGUF" required></label><label>GGUF file path in repository<input id="download-hf-file" placeholder="model-Q4_K_M.gguf" required></label><label>Revision<input id="download-revision" value="main" required></label></div>
+ <label id="download-url-label" hidden>HTTPS file URL<input id="download-url" type="url" placeholder="https://huggingface.co/owner/model/resolve/main/model.gguf"></label>
+ <div class="two-column"><label>Save as (optional)<input id="download-filename" placeholder="Leave blank to use the file's name" maxlength="185"></label><label>Expected SHA-256 (optional)<input id="download-sha" pattern="[a-fA-F0-9]{64}" placeholder="Publisher's checksum"></label></div>
+ <button id="download-start" class="primary">Download model</button></form>
+ <p class="muted">Choose a GGUF supported by your hardware and check its publisher's licence. Public files only; for private or gated files, download with your repository account and use Import. Downloading does not automatically load the model.</p><div id="download-jobs" aria-live="polite"></div></div>
  <div class="two-column"><div class="card"><h2>Import a GGUF file</h2><form id="model-import-form"><label>Model file<input type="file" id="model-import-file" accept=".gguf" required></label><label>Expected SHA-256 (optional)<input id="model-sha" pattern="[a-fA-F0-9]{64}" placeholder="Paste the publisher's checksum"></label><progress id="model-upload-progress" max="100" value="0"></progress><p id="import-status"></p><div class="row"><button id="import-model" class="primary">Import file</button><button type="button" id="cancel-import">Cancel upload</button></div></form></div><div class="card"><h2>Saved model profiles</h2><label>Profile<select id="profile-list"></select></label><div class="row"><button id="use-profile">Apply to form</button><button id="delete-profile">Delete profile</button></div><label>Save current form as<input id="profile-name" maxlength="100" placeholder="e.g. Laptop CPU"></label><button id="save-profile">Save profile</button><button id="inspect-model">Inspect file & checksum</button><pre id="model-inspection" class="message-text"></pre></div></div>
  <div class="two-column"><form id="model-form" class="card"><h2>Model configuration</h2>
  <label>GGUF file<select id="model-file" required></select></label>

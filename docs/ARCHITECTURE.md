@@ -92,4 +92,4 @@ The app uses Argon2 password hashing, HTTP-only sessions, SameSite cookies, CSRF
 
 Source passages are untrusted prompt context. Instructions reduce but cannot eliminate prompt injection or hallucinations. The model has no shell/browser/file tools. Queue limits, archive limits and indexing timeouts do not replace OS-level memory limits or public traffic controls.
 
-This architecture targets one host and bounded collections/user load. It does not implement horizontal scaling, tenant-isolated model pools, SSO, billing, a durable chat queue, or automatic model downloads. Use the [acceptance checklist](ACCEPTANCE.md) to measure your target setup.
+This architecture targets one host and bounded collections/user load. It does not implement horizontal scaling, tenant-isolated model pools, SSO, billing, a durable chat queue, or unattended model updates. Administrators can explicitly initiate [public HTTPS GGUF downloads](MODEL-DOWNLOADS.md). Use the [acceptance checklist](ACCEPTANCE.md) to measure your target setup.
