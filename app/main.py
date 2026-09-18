@@ -20,6 +20,7 @@ from . import db
 from .features import router as feature_router
 from .config import settings
 from .inference import runtime
+from .request_queue import scheduler
 from .retrieval import search
 from .document_chat import selected_documents, all_passages, summarise
 from .security import knowledge_access
@@ -49,6 +50,7 @@ async def lifespan(app):
     lock.acquire()
     try:
         db.execute("UPDATE messages SET status='interrupted' WHERE status='generating'")
+        db.execute("UPDATE eval_runs SET status='interrupted' WHERE status IN ('queued','running')")
         if not db.one("SELECT id FROM users LIMIT 1"):
             bootstrap_token()
             log.warning("First-run token is in %s/setup-token.txt", settings.data_dir)
@@ -61,6 +63,8 @@ async def lifespan(app):
                     log.error("Saved model could not load; see Models in the administrator dashboard.")
         task = asyncio.create_task(asyncio.to_thread(autoload))
         yield
+        for item in scheduler.snapshot()["requests"]:
+            scheduler.cancel(item["key"])
         for _, stop in list(runtime.active.values()):
             stop.set()
         await task
@@ -68,8 +72,14 @@ async def lifespan(app):
         lock.release()
 
 
-app = FastAPI(title="Nelsonict AI", version="1.1.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="Nelsonict AI", version="1.2.0", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.include_router(feature_router)
+from .migration import router as migration_router
+from .quality import router as quality_router
+from .operations import router as queue_router
+from .public_widget import router as public_router
+for router in (migration_router, quality_router, queue_router, public_router):
+    app.include_router(router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts.split(","))
 
 
@@ -91,6 +101,16 @@ async def protections(request, call_next):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    if request.url.path.startswith("/widget/"):
+        try:
+            from .public_widget import live_site
+            site = live_site(int(request.url.path.rsplit("/", 1)[1]))
+            ancestors = " ".join(json.loads(site["origins"]))
+            response.headers["Content-Security-Policy"] = response.headers["Content-Security-Policy"].replace("frame-ancestors 'none'", "frame-ancestors " + ancestors)
+            del response.headers["X-Frame-Options"]
+        except (ValueError, HTTPException):
+            pass
+        response.headers["Cache-Control"] = "no-store"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -99,7 +119,7 @@ async def protections(request, call_next):
 @app.get("/api/health")
 def health():
     db.one("SELECT 1")
-    return {"status": "ok", "version": "1.1.0"}
+    return {"status": "ok", "version": "1.2.0"}
 
 
 @app.get("/api/setup")
@@ -178,6 +198,7 @@ def disable_user(identifier: int, user=Depends(administrator)):
         raise HTTPException(400, "You cannot disable your own account.")
     db.execute("UPDATE users SET disabled=1 WHERE id=?", (identifier,))
     db.execute("DELETE FROM sessions WHERE user_id=?", (identifier,))
+    scheduler.cancel_user(identifier)
     for _, (owner, stop) in list(runtime.active.items()):
         if owner == identifier:
             stop.set()
@@ -329,7 +350,7 @@ def rename_conversation(identifier: int, body: Name, user=Depends(current_user))
 @app.delete("/api/conversations/{identifier}")
 def delete_conversation(identifier: int, user=Depends(current_user)):
     owned("conversations", identifier, user["id"])
-    if identifier in runtime.active:
+    if any(t["key"] == f"chat:{identifier}" for t in scheduler.snapshot()["requests"]):
         raise HTTPException(409, "Stop the current response before deleting this conversation.")
     db.execute("DELETE FROM conversations WHERE id=?", (identifier,))
     return {"ok": True}
@@ -377,7 +398,8 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
     elif body.task != "question":
         raise HTTPException(400, "Summary and comparison require document mode.")
     try:
-        stop = runtime.reserve(identifier, user["id"])
+        ticket = scheduler.submit(f"chat:{identifier}", user["id"])
+        stop = ticket.stop
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     try:
@@ -388,7 +410,7 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
                 "INSERT INTO messages(conversation_id,role,content,status,created) VALUES(?,'assistant','','generating',?)",
                 (identifier, time.time())).lastrowid
     except Exception:
-        runtime.release(identifier)
+        scheduler.finish(ticket)
         raise
     events = queue.Queue(maxsize=128)
 
@@ -403,6 +425,11 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
     def generate():
         text, sources, status = "", [], "complete"
         try:
+            scheduler.wait(ticket, send)
+            if not db.one("SELECT id FROM users WHERE id=? AND disabled=0", (user["id"],)):
+                raise RuntimeError("Account is no longer active.")
+            owned("conversations", identifier, user["id"])
+            send({"type":"progress","message":"Generating response…"})
             question = body.content
             history = db.rows(
                 "SELECT role,content FROM messages WHERE conversation_id=? AND id<? AND status='complete' "
@@ -452,7 +479,7 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
                 db.execute("UPDATE messages SET content=?,sources=?,status=? WHERE id=?",
                            (text, json.dumps(sources), status, message_id))
             finally:
-                runtime.release(identifier)
+                scheduler.finish(ticket)
                 # Final sentinel must be available even after cancellation.
                 while True:
                     try:
@@ -491,7 +518,7 @@ async def chat(identifier: int, body: Chat, request: Request, user=Depends(curre
 @app.post("/api/conversations/{identifier}/stop")
 def stop_chat(identifier: int, user=Depends(current_user)):
     owned("conversations", identifier, user["id"])
-    return {"stopped": runtime.cancel(identifier, user["id"])}
+    return {"stopped": scheduler.cancel(f"chat:{identifier}", user["id"])}
 
 
 @app.get("/api/status")

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from . import db
 from .config import settings
 from .inference import runtime
+from .request_queue import scheduler
 from .security import administrator, current_user, owned, owned_document, knowledge_access
 from .schemas import Share, Profile
 from .machine import inspect_gguf, system_report
@@ -40,6 +41,9 @@ def check_system(user=Depends(administrator)):
     report['model'] = runtime.status()
     report['worker_online'] = time.time()-db.get_setting('worker_heartbeat',0) < 20
     report['wizard_complete'] = db.get_setting('wizard_complete',False)
+    reviewed = db.get_setting('migration_hardware')
+    if reviewed:
+        report['recommended'].update(reviewed)
     return report
 
 
@@ -183,6 +187,7 @@ def share(identifier: int,body: Share,user=Depends(current_user)):
 def revoke(identifier: int,member_id: int,user=Depends(current_user)):
     owned('knowledge_bases',identifier,user['id'])
     db.execute('DELETE FROM knowledge_members WHERE kb_id=? AND user_id=?',(identifier,member_id))
+    scheduler.cancel_user(member_id)
     # Stop outstanding generations for this user; later requests recheck access.
     for _,(owner,stop) in list(runtime.active.items()):
         if owner==member_id:

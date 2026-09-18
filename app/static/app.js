@@ -49,7 +49,7 @@ function selectOptions(id, items, placeholder) {
 function showView(view) {
   document.querySelectorAll(".view").forEach(el => el.hidden = el.id !== "view-" + view);
   document.querySelectorAll("[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
-  $("view-title").textContent = {chat:"Chat",knowledge:"Knowledge",assistants:"Assistants",models:"Models",settings:"Settings & backup",wizard:"Setup wizard"}[view];
+  $("view-title").textContent = {chat:"Chat",knowledge:"Knowledge",assistants:"Assistants",models:"Models",settings:"Settings & backup",wizard:"Setup wizard",quality:"Quality & evaluation",operations:"Operations & website"}[view];
 }
 document.querySelectorAll("[data-view]").forEach(el => el.addEventListener("click", async () => {
   showView(el.dataset.view);
@@ -99,7 +99,10 @@ async function openConversation(id) {
   await refreshChatDocuments();
   const rows = await api("/conversations/" + id + "/messages");
   $("messages").replaceChildren();
-  rows.forEach(row => message(row.role, row.content, row.sources, row.status));
+  rows.forEach(row => {
+    const rendered=message(row.role,row.content,row.sources,row.status);
+    if(row.role==='assistant' && row.status!=='generating' && typeof addFeedbackControls==='function') addFeedbackControls(rendered.article,row.id);
+  });
   renderConversations(); showView("chat");
   $("messages").scrollTop = $("messages").scrollHeight;
 }
@@ -259,6 +262,7 @@ on("chat-form","submit",async e=>{
         if(event.type==="token") output.text.textContent+=event.text;
         if(event.type==="sources") renderSources(output.article,event.sources);
         if(event.type==="error") notify(event.message);
+        if(event.type==="queue") $("chat-hint").textContent=event.message;
         if(event.type==="progress") $("chat-hint").textContent=event.message;
       }
       $("messages").scrollTop=$("messages").scrollHeight;
@@ -290,6 +294,19 @@ on("delete-kb","click",async()=>{
   if(!state.kb||!confirm("Delete this knowledge base and all its PDFs?")) return;
   await api("/knowledge/"+state.kb,{method:"DELETE"});state.kb=null;
   $("kb-title").textContent="Select a knowledge base";$("document-list").replaceChildren();await refreshLists();
+});
+on("upload-format","change",()=>{
+  const formats={
+    all:[".pdf,.docx,.txt,.md,.csv,.xlsx","documents","Choose Word, CSV, PDF, text, Markdown, or Excel files. Wait for Ready before asking questions."],
+    docx:[".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document","Word documents","Upload .docx files. Main paragraphs and top-level tables are indexed; convert older .doc files to .docx first."],
+    csv:[".csv,text/csv","CSV tables","Upload UTF-8 CSV files with a header row. Each row is indexed with its column labels; sources identify CSV row numbers."],
+    pdf:[".pdf,application/pdf","PDF documents","Upload unlocked PDFs. Scanned pages need OCR configured by your administrator."],
+    text:[".txt,.md,text/plain,text/markdown","text documents","Save text and Markdown as UTF-8. Sources identify line ranges."],
+    xlsx:[".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","Excel workbooks","Save a recalculated .xlsx workbook first. Formula results use cached values; sources identify sheets and rows."]
+  };
+  const [accept,label,help]=formats[$("upload-format").value]||formats.all;
+  $("pdf-files").accept=accept;$("pdf-files").value="";
+  $("upload-label").textContent="＋ Choose "+label;$("upload-help").textContent=help;
 });
 on("pdf-files","change",async()=>{
   if(!state.kb) {$("pdf-files").value="";throw new Error("Create or select a knowledge base first.");}

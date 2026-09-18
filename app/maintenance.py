@@ -63,11 +63,16 @@ def restore_backup(archive_path, destination):
             try:
                 if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise ValueError("Backup database failed its integrity check.")
-                if conn.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
+                if conn.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
                     raise ValueError("Unsupported database schema.")
                 if conn.execute("PRAGMA foreign_key_check").fetchone():
                     raise ValueError("Backup contains invalid references.")
                 with conn:
+                    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                    if 'public_sites' in tables:
+                        conn.execute("UPDATE public_sites SET enabled=0")
+                    if 'eval_runs' in tables:
+                        conn.execute("UPDATE eval_runs SET status='interrupted' WHERE status IN ('queued','running')")
                     conn.execute("DELETE FROM sessions")
                     conn.execute("DELETE FROM login_attempts")
                     conn.execute("UPDATE documents SET status='queued',progress=0 WHERE status='processing'")

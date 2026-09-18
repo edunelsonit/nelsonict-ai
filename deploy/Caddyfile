@@ -1,8 +1,16 @@
-# Replace ai.example.com with your real hostname. Both routes still require app authentication.
+# Replace ai.example.com with your real hostname. Public widget routes are anonymous only when explicitly enabled.
 ai.example.com {
     handle /api/models/import {
         request_body {
             max_size 21GB
+        }
+        reverse_proxy 127.0.0.1:8000 {
+            flush_interval -1
+        }
+    }
+    handle /api/migration/stage {
+        request_body {
+            max_size 2100MB
         }
         reverse_proxy 127.0.0.1:8000 {
             flush_interval -1

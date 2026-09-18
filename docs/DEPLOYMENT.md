@@ -28,7 +28,7 @@ Caddy forwards streaming without buffering. Uvicorn trusts forwarded headers fro
 
 Origin validation compares the browser origin to the effective application URL. Wrong proxy scheme forwarding can reject login/uploads. Correct the proxy instead of disabling validation.
 
-The example uses a 21 GB limit only for /api/models/import and 26 MB for ordinary uploads. The application still enforces its own configured limits and administrator authentication. Change proxy/application limits together. Ensure the model directory is writable by the app account (container UID 10001) before using browser import.
+The example uses a 21 GB limit for `/api/models/import`, 2,100 MB for `/api/migration/stage`, and 26 MB for ordinary uploads. The application enforces its own configured limits and requires administrator authentication for model import and migration. Public widget requests are anonymous only when publication is explicitly enabled. Change proxy/application limits together. Ensure the model directory is writable by the app account (container UID 10001) before using browser import.
 
 ## systemd
 
@@ -55,6 +55,14 @@ services:
 ~~~
 
 API memory must cover GGUF weights, context cache, uploads, and optional query embeddings. If one PDF repeatedly crashes processing, remove it and prepare a smaller version.
+
+## Guided migration and effective configuration
+
+For the browser restore workflow, follow [the version 1.2 migration guide](UPGRADE-1.2.md#6-guided-backup-and-migration). It restores to a separate directory and writes `runtime-settings.json` at the original bootstrap data root. Restart both API and worker to read it. Keep that root accessible after migration; backing up SQLite does not include this external overlay.
+
+The managed CLI uses reviewed native listen settings unless explicit `--host`/`--port` flags override them. Docker's internal API command and published ports still come from its deployment configuration. Change Compose port settings and recreate services when needed; a GUI review does not rewrite container mappings. The example systemd API command also has explicit bind arguments, which must be edited separately when changing its listening address.
+
+Restored public assistants start disabled. Review the approved public documents, deployment domain and embedding paths before republishing.
 
 ## Docker migration
 
@@ -98,7 +106,7 @@ Sign in and load a model through the GUI. Keep the old volume until recovery is 
 
 Back up, stop services, pull the new source, review schema notes, rebuild dependencies/images, restart, and verify sign-in, retrieval, and inference.
 
-Schema version 2 is current. Version 1 migrates automatically and transactionally, retaining existing records. Back up before upgrade and stop both services first. Versions newer than 2 are rejected. Keep the pre-migration backup for rollback; old code cannot open the new database.
+Schema version 3 is current. Versions 1 and 2 migrate automatically and transactionally, retaining existing records. Back up before upgrade and stop both services first. Versions newer than 3 are rejected. Keep the pre-migration backup for rollback; old code cannot open the new database.
 
 ## Troubleshooting
 
@@ -111,13 +119,13 @@ Schema version 2 is current. Version 1 migrates automatically and transactionall
 | GPU setting has no effect | Install an accelerated inference build; default Docker is CPU-only. |
 | Worker offline | Start app.worker or inspect Docker worker logs. |
 | Scanned PDF failed | Install OCR packages, Tesseract, and language data. |
-| Embedding mismatch | Restart with the correct directory and reindex all affected PDFs. |
+| Embedding mismatch | Restart with the correct directory and reindex all affected documents. |
 | Invalid host | Add the actual hostname/IP to NELSON_ALLOWED_HOSTS and restart. |
 | No session over HTTP | Use HTTPS; disable secure cookies only for local development. |
 | Duplicate process / locked database | Stop duplicate services and use local storage. |
-| Model busy | Wait or stop the current response. |
+| Queue full/paused or model busy | Inspect Operations → Request queue. Wait or cancel, and pause admission before changing a busy model. |
 | Historical source download fails | Original PDF was deleted; the chat excerpt remains. |
 
 ## Boundaries
 
-One host and a bounded user group. No billing, SSO, email password recovery, horizontal scaling, or automatic model downloads. Original PDF quotas do not limit total chat/embedding/backup/model storage; monitor disk use separately. Backups include every account's sensitive data.
+One host and a bounded user group. No billing, SSO, email password recovery, horizontal scaling, or automatic model downloads. Original-document quotas do not limit total chat/embedding/backup/model storage; monitor disk use separately. Backups include every account's sensitive data.
