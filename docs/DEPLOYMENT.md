@@ -128,4 +128,4 @@ Schema version 3 is current. Versions 1 and 2 migrate automatically and transact
 
 ## Boundaries
 
-One host and a bounded user group. No billing, SSO, email password recovery, horizontal scaling, or automatic model downloads. Original-document quotas do not limit total chat/embedding/backup/model storage; monitor disk use separately. Backups include every account's sensitive data.
+One host and a bounded user group. No billing, SSO, email password recovery, horizontal scaling, or unattended model updates. Administrators can explicitly initiate [public HTTPS GGUF downloads](MODEL-DOWNLOADS.md). Original-document quotas do not limit total chat/embedding/backup/model storage; monitor disk use separately. Backups include every account's sensitive data.

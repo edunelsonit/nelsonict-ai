@@ -22,6 +22,7 @@ jobs:
       - run: node --check app/static/app.js
       - run: node --check app/static/api-docs.js
       - run: node --check app/static/operations.js
+      - run: node --check app/static/model-downloads.js
       - run: node --check app/static/widget.js
       - run: python -m pytest -q
       - name: Frontend DOM smoke tests

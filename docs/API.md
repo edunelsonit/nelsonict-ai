@@ -156,3 +156,7 @@ A public endpoint is anonymous and may be called directly. Its HTTPS origin list
 | 507 | Insufficient staging space. |
 
 Errors raised during a stream arrive as events rather than a replacement HTTP status. Keep sensitive response bodies, session values and document excerpts out of diagnostic logs.
+
+## Model downloads (administrator)
+
+Use `POST /api/models/downloads` with `url`, optional `filename` and optional `sha256`; poll `GET /api/models/downloads` and cancel with `POST /api/models/downloads/{id}/cancel`. See [model downloads](MODEL-DOWNLOADS.md) for statuses and validation.

@@ -7,6 +7,7 @@ Documentation for the version 1.2 implementation. Start with the guide for your 
 | Install the application and load your first model | [Project README](../README.md) |
 | Chat, upload documents, share knowledge and check answers | [User guide](USER-GUIDE.md) |
 | Manage accounts, the queue, models, backups and recovery | [Administrator guide](ADMIN-GUIDE.md) |
+| Download GGUF weights from Hugging Face or a public repository | [Model downloads](MODEL-DOWNLOADS.md) |
 | Understand the runtime, database and trust boundaries | [Architecture](ARCHITECTURE.md) |
 | Integrate a client or inspect API conventions | [API guide](API.md) |
 | Deploy on LAN, HTTPS, Docker or systemd | [Deployment](DEPLOYMENT.md) |
@@ -30,8 +31,8 @@ Documentation for the version 1.2 implementation. Start with the guide for your 
 
 The implementation is version **1.2.0**, with SQLite schema **3**. Archive format version **1** is unchanged. These version numbers describe different things.
 
-The last implementation verification passed 69 Python tests, extended frontend DOM smoke checks and a Linux frozen-executable smoke test covering startup, authentication, native inference import, text indexing and shutdown. A local Ubuntu 24.04 x64 package was built. These checks do not establish graphical rendering, real GGUF/GPU generation, scanned-document accuracy, or live website deployment.
+Current verification passed 100 Python tests and extended frontend DOM smoke checks, including model downloads. Earlier verification also passed a Linux frozen-executable smoke test covering startup, authentication, native inference import, text indexing and shutdown. A local Ubuntu 24.04 x64 package was built. These checks do not establish graphical rendering, real GGUF/GPU generation, scanned-document accuracy, or live website deployment.
 
-The Windows and Ubuntu GitHub installer jobs failed before running any steps at the last check, so no successful hosted package build is claimed. The local installer download transfer also failed. Package source and build instructions remain available. Version 1.2 is proposed in [pull request #1](https://github.com/edunelsonit/nelsonict-ai/pull/1); inclusion in the default branch depends on that pull request being merged.
+The Windows and Ubuntu GitHub installer jobs failed before running any steps at the last check, so no successful hosted package build is claimed. The local installer download transfer also failed. Package source and build instructions remain available. Version 1.2 was merged into main in [pull request #1](https://github.com/edunelsonit/nelsonict-ai/pull/1).
 
 Uploading documents provides retrieval-augmented generation (RAG). It does not train or fine-tune model weights.

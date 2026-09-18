@@ -19,7 +19,7 @@
 | [Desktop installation](docs/DESKTOP.md) | Windows/Ubuntu builds, shortcuts, startup and updates. |
 | [Website integration](docs/WEBSITE.md) | Approved public documents and embedding on nelsonict.com.ng. |
 
-Version 1.2 is proposed in [PR #1](https://github.com/edunelsonit/nelsonict-ai/pull/1). Use its feature branch to review the implementation until it is merged. Installer workflows are provided; a successful Windows build and live website deployment are not yet verified.
+Version 1.2 was merged into main in [PR #1](https://github.com/edunelsonit/nelsonict-ai/pull/1). Installer workflows are provided; a successful Windows build and live website deployment are not yet verified.
 
 ## Contents
 
@@ -116,7 +116,7 @@ The build compiles the native inference dependency and can take several minutes.
 1. Open **http://localhost:8000**.
 2. Paste the setup token printed by the final command.
 3. Create an administrator username and password of at least 12 characters.
-4. Use **Setup wizard** to check dependencies, then **Models → Import a GGUF file** (or copy one to the host models folder).
+4. Use **Setup wizard** to check dependencies, then **Models → Download a GGUF model** for a public Hugging Face repository or direct HTTPS file link. You can also import a local GGUF file or copy one to the host models folder. See [model downloads](docs/MODEL-DOWNLOADS.md).
 5. Open **Models → Refresh files**, select it, and click **Load model**.
 6. Start with **4096 context**, **4 CPU threads**, **0 GPU layers**, and **512 response tokens**. Lower settings if memory is limited.
 7. Run the wizard’s local model test, then open **Knowledge**, create a collection, and upload a supported document.
@@ -281,7 +281,7 @@ The operator supplies model files. Choose a model supported by the installed inf
 - Paste a publisher SHA-256 to verify the upload, or calculate a checksum through Inspect file. A checksum does not establish model trustworthiness.
 - Saved profiles retain model filename, context, threads, GPU layers, response tokens, temperature and chat format. Apply a profile to the form, then click Load model.
 - Docker's models mount is now writable for imports. The host directory must permit container UID 10001 to write; copying models manually remains available.
-- Users cannot provide arbitrary model paths or download URLs.
+- Model paths are restricted to the configured models directory. Administrators can explicitly download public GGUF files over HTTPS, with progress, cancellation and optional SHA-256 verification. See [model downloads](docs/MODEL-DOWNLOADS.md).
 - Leave chat format blank to use GGUF metadata; override only when the model requires it.
 - Saved configuration reloads on startup. Load errors appear in Models.
 - Loading a replacement may unload the old model first to free memory.
@@ -485,6 +485,7 @@ Open `/docs` on your running instance for the local API reference and `/openapi.
 | Conversations | `GET/POST /api/conversations`, `PUT/DELETE /api/conversations/{id}`, `GET /api/conversations/{id}/messages`, `GET /api/conversations/{id}/export` |
 | Streaming chat | `POST /api/conversations/{id}/chat`, `POST /api/conversations/{id}/stop` |
 | Model management (admin) | `GET /api/models`, `POST /api/models/load`, `POST /api/models/unload`, `POST /api/models/import`, `GET /api/models/inspect` |
+| Model downloads (admin) | `GET/POST /api/models/downloads`, `POST /api/models/downloads/{id}/cancel` |
 | Profiles (admin) | `GET/POST /api/model-profiles`, `DELETE /api/model-profiles/{id}` |
 | Status and backup | `GET /api/status`, `GET /api/backup` (backup is admin-only) |
 
@@ -581,7 +582,7 @@ Implementation uses FastAPI, SQLite directly, and a self-contained JavaScript fr
 
 ## Development and verification
 
-Version 1.2 local verification: **69 Python tests passed**, including the original regression suite and new migration, queue, feedback, evaluation, public-isolation and managed-restart tests. Extended frontend DOM smoke checks passed. See [the 1.2 guide](docs/UPGRADE-1.2.md) for the added workflows. The browser preview could not connect to the local address, so visual rendering was not verified. Docker and real-GGUF/GPU testing remain unverified; generation tests use a simulated model boundary.
+Version 1.2 local verification: **100 Python tests passed**, including the original regression suite and new migration, queue, feedback, evaluation, public-isolation and managed-restart and model-download tests. Extended frontend DOM smoke checks passed. See [the 1.2 guide](docs/UPGRADE-1.2.md) for the added workflows. The browser preview could not connect to the local address, so visual rendering was not verified. Docker and real-GGUF/GPU testing remain unverified; generation tests use a simulated model boundary.
 
 See [API reference](#api-reference) for endpoint groups and authentication/upload conventions.
 

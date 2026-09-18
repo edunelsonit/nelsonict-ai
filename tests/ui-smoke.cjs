@@ -12,6 +12,7 @@ const fixtures={
  '/conversations':[], '/knowledge':knowledge, '/assistants':[],
  '/status':{model:{loaded:false},worker_online:true,search:'keyword',upload_limit_mb:25,storage_limit_mb:250},
  '/system/check':{os:'Linux',cpu:'Test CPU',cores:4,ram_total:16*1073741824,ram_available:8*1073741824,disk_free:100*1073741824,models_writable:true,nvidia_devices:[],dependencies:{inference:false},inference_backend:{gpu_offload:false,error:null},installation_help:{inference:'Install inference'},recommended:{context:2048,threads:2},worker_online:true,wizard_complete:false},
+ '/models/downloads':[],
  '/models':{models:[{filename:'local.gguf',bytes:10000}],loaded:false},
  '/model-profiles':[{id:1,name:'Laptop',config:{filename:'local.gguf',context:2048,threads:2,gpu_layers:0,max_tokens:256,temperature:0.2}}],
  '/knowledge/1/documents':[{id:5,name:'training.txt',size:100,status:'ready',progress:100,pages:0,format:'txt'}],
@@ -23,7 +24,7 @@ const fixtures={
 };
 w.fetch=async(url,options={})=>{const path=String(url).replace(/^\/api/,'');calls.push({path,options});if(!(path in fixtures))throw Error('Unexpected request '+path);return new Response(JSON.stringify(fixtures[path]),{headers:{'content-type':'application/json'}});};
 w.confirm=()=>false;
-w.eval(fs.readFileSync('app/static/app.js','utf8')+'\n'+fs.readFileSync('app/static/operations.js','utf8'));
+w.eval(fs.readFileSync('app/static/app.js','utf8')+'\n'+fs.readFileSync('app/static/operations.js','utf8')+'\n'+fs.readFileSync('app/static/model-downloads.js','utf8'));
 const flush=()=>new Promise(r=>setTimeout(r,30));
 (async()=>{
  await flush();
@@ -32,6 +33,14 @@ const flush=()=>new Promise(r=>setTimeout(r,30));
  assert.match(d.getElementById('machine-report').textContent,/Test CPU/);
  d.getElementById('wizard-models').click();await flush();
  assert.equal(d.getElementById('view-models').hidden,false);
+ d.getElementById('download-source').value='url';
+ d.getElementById('download-source').dispatchEvent(new w.Event('change'));
+ assert.equal(d.getElementById('download-url').required,true);
+ assert.equal(d.getElementById('download-repo').required,false);
+ d.getElementById('download-source').value='huggingface';
+ d.getElementById('download-source').dispatchEvent(new w.Event('change'));
+ assert.equal(d.getElementById('download-repo').required,true);
+ assert.equal(d.getElementById('download-url-label').hidden,true);
  d.getElementById('profile-list').value='1';d.getElementById('use-profile').click();await flush();
  assert.equal(d.getElementById('model-threads').value,'2');
  assert.equal(d.getElementById('model-file').value,'local.gguf');
