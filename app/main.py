@@ -11,7 +11,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 import portalocker
-from fastapi import FastAPI, Depends, HTTPException, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
@@ -21,6 +21,7 @@ from .features import router as feature_router
 from .model_downloads import router as download_router, downloads
 from .config import settings
 from .inference import runtime
+from .model_resources import assess_model, memory_snapshot
 from .request_queue import scheduler
 from .retrieval import search
 from .document_chat import selected_documents, all_passages, summarise
@@ -532,16 +533,53 @@ def status(user=Depends(current_user)):
             "upload_limit_mb": settings.max_upload_mb, "storage_limit_mb": settings.user_storage_mb}
 
 
+def installed_model_paths():
+    for item in sorted(settings.models_dir.iterdir()):
+        if item.suffix.lower() != '.gguf':
+            continue
+        try:
+            runtime.path(item.name)
+            yield item
+        except (ValueError, OSError):
+            continue
+
+
 @app.get("/api/models")
 def models(user=Depends(administrator)):
     available = []
-    for item in sorted(settings.models_dir.glob("*.gguf")):
+    for path in installed_model_paths():
         try:
-            path = runtime.path(item.name)
-            available.append({"filename": item.name, "bytes": path.stat().st_size})
-        except ValueError:
+            available.append({"filename": path.name, "bytes": path.stat().st_size})
+        except OSError:
             continue
     return {"models": available, **runtime.status()}
+
+
+@app.get("/api/models/resources")
+def model_resources(context: int = Query(default=4096, ge=1024, le=32768),
+                    user=Depends(administrator)):
+    snapshot = memory_snapshot()
+    paths = list(installed_model_paths())
+
+    def assessments(tokens):
+        return [{"filename": path.name, "bytes": result["model_bytes"], **result}
+                for path in paths
+                for result in [assess_model(path, tokens, snapshot)]]
+
+    available = assessments(context)
+    recommendation = {**snapshot["recommended"], "filename": None}
+    suggested_context = recommendation["context"]
+    # Prefer normal context; only reduce it when no installed model fits.
+    for tokens in sorted({suggested_context, 2048, 1024}, reverse=True):
+        if tokens > suggested_context:
+            continue
+        candidates = available if tokens == context else assessments(tokens)
+        fitting = [item for item in candidates if item["allowed"]]
+        if fitting:
+            chosen = min(fitting, key=lambda item: (-item["model_bytes"], item["filename"]))
+            recommendation.update(filename=chosen["filename"], context=tokens)
+            break
+    return {**snapshot, "recommended": recommendation, "models": available}
 
 
 @app.post("/api/models/load")

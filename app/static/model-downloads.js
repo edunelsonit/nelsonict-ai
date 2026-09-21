@@ -32,7 +32,7 @@ async function refreshDownloads(){
       if(job.error)card.append(node('p',job.error));
       if(job.status==='complete'){
         card.append(node('p','SHA-256: '+job.sha256+(job.checksum_verified?' · matches expected checksum':' · no expected checksum supplied'),'message-text'));
-        card.append(button('Select in model form',async()=>{await refreshModels();$('model-file').value=job.filename;$('model-form').scrollIntoView?.({behavior:'smooth'});notify('Model selected. Review settings, then click Load model.');}));
+        card.append(button('Select in model form',async()=>{await refreshModels();$('model-file').value=job.filename;await refreshModelResources();$('model-form').scrollIntoView?.({behavior:'smooth'});notify('Model selected. Review the memory check and settings, then click Load model.');}));
         if(lastDownloadStates.get(job.id)!=='complete')completed=true;
       }
       lastDownloadStates.set(job.id,job.status);$('download-jobs').append(card);

@@ -3,6 +3,8 @@ import threading
 import time
 from pathlib import Path
 from .config import settings
+from .model_resources import assess_model
+from .schemas import ModelConfig
 
 class ModelRuntime:
     def __init__(self):
@@ -28,10 +30,13 @@ class ModelRuntime:
         self.loading = True
         self.error = None
         try:
+            # Saved startup settings pass through the same validation and memory
+            # policy as API loads. Profiles cannot turn this guard off.
+            config = ModelConfig(**config).model_dump()
             path = self.path(config["filename"])
-            with path.open("rb") as handle:
-                if handle.read(4) != b"GGUF":
-                    raise ValueError("File does not have a valid GGUF header.")
+            assessment = assess_model(path, config["context"])
+            if not assessment["allowed"]:
+                raise ValueError(assessment["reason"])
             from llama_cpp import Llama
             if self.model:
                 self.model.close()

@@ -6,7 +6,6 @@ import shutil
 import struct
 import subprocess
 from pathlib import Path
-import psutil
 from .config import settings
 
 
@@ -45,6 +44,10 @@ def inspect_gguf(path):
                     amount = count * struct.calcsize('<' + numeric[subtype])
                     if handle.tell() + amount > size:
                         raise ValueError('Truncated GGUF array.')
+                    if keep:
+                        if count > 4096:
+                            raise ValueError('GGUF architecture array too large.')
+                        return [number(numeric[subtype]) for _ in range(count)]
                     handle.seek(amount, 1)
                 else:
                     for _ in range(count):
@@ -58,16 +61,23 @@ def inspect_gguf(path):
             raise ValueError('Unsupported GGUF version or empty model.')
         for _ in range(entries):
             key = string()
-            wanted = key in ('general.name','general.architecture','general.file_type') or key.endswith('.context_length')
+            wanted = key in ('general.name','general.architecture','general.file_type','general.type','split.count') or key.endswith(
+                ('.context_length','.block_count','.embedding_length','.attention.head_count',
+                 '.attention.head_count_kv','.attention.key_length','.attention.value_length'))
             item = value(number('I'), wanted)
             if wanted:
+                if key in metadata:
+                    raise ValueError('Duplicate GGUF architecture metadata.')
                 metadata[key] = item
+        if size - handle.tell() < tensors * 32:
+            raise ValueError('Truncated GGUF tensor directory.')
         return {'version':version,'tensors':tensors,'bytes':size,'metadata':metadata,
                 'note':'Metadata validated. Architecture support and actual RAM/GPU use require a successful load.'}
 
 
 def system_report():
-    memory = psutil.virtual_memory()
+    from .model_resources import memory_snapshot
+    memory = memory_snapshot()
     gpu = []
     binary = shutil.which('nvidia-smi')
     if binary:
@@ -88,17 +98,11 @@ def system_report():
             backend['gpu_offload'] = bool(llama_cpp.llama_supports_gpu_offload())
         except Exception as exc:
             backend['error'] = str(exc)[:300]
-    total,available = memory.total,memory.available
-    # Honour cgroup v2 limits when running the CPU Docker image.
-    try:
-        limit = int(Path('/sys/fs/cgroup/memory.max').read_text().strip())
-        usage = int(Path('/sys/fs/cgroup/memory.current').read_text().strip())
-        total,available = min(total,limit),min(available,max(0,limit-usage))
-    except (OSError,ValueError):
-        pass
     return {'os':platform.system(), 'machine':platform.machine(), 'python':platform.python_version(),
             'cpu':platform.processor() or platform.machine(), 'cores':os.cpu_count(),
-            'ram_total':total,'ram_available':available,
+            'ram_total':memory['ram_total'],'ram_available':memory['ram_available'],
+            'reserve_bytes':memory['reserve_bytes'],'budget_bytes':memory['budget_bytes'],
+            'memory_note':memory['note'],
             'disk_free':shutil.disk_usage(settings.models_dir).free,
             'models_writable':os.access(settings.models_dir,os.W_OK),
             'nvidia_devices':gpu, 'apple_silicon':platform.system()=='Darwin' and platform.machine()=='arm64',
@@ -106,6 +110,5 @@ def system_report():
             'installation_help':{'inference':'pip install -r requirements-inference.txt',
               'documents':'pip install -r requirements.txt', 'OCR':'pip install -r requirements-ocr.txt; install Tesseract and the language pack',
               'semantic':'Optional: install requirements-semantic.txt and configure a local embedding folder'},
-            'recommended':{'threads':max(1,min(psutil.cpu_count(logical=False) or 2,8)),
-                           'context':4096 if available>8*1024**3 else 2048,'gpu_layers':0},
-            'model_guidance':'Start with model weights below half of available RAM. Context cache and other services need additional memory. Detected GPU hardware does not establish backend support.'}
+            'recommended':memory['recommended'],
+            'model_guidance':'Model loading checks current available RAM, reserves memory for other services, and estimates weights, runtime buffers and context cache. Estimates are not a guarantee of successful loading; detected GPU hardware does not increase the RAM budget.'}

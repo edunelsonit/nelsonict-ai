@@ -10,7 +10,7 @@ Administrators can download public model files directly onto the Nelsonict AI se
 4. Leave revision as `main`, or enter a branch, tag or commit. A commit plus a publisher-provided checksum is preferable for reproducible installations.
 5. Optionally enter a local filename and the publisher's expected SHA-256.
 6. Start the download. Watch progress or cancel it in Models.
-7. When complete, click **Select in model form**, review context/CPU/GPU settings, then **Load model**.
+7. When complete, review the memory assessment in Models. If the file fits, click **Select in model form**, review context/CPU/GPU settings, then **Load model**. **Choose model for this system** can instead select the largest installed file that passes the estimate at the suggested context and apply CPU settings to the form; it lowers context only if no file fits.
 
 The form builds a Hugging Face `resolve` URL. Hugging Face file-page links containing `/blob/` also work through the direct URL option: they are converted to `/resolve/`. See the upstream [download documentation](https://huggingface.co/docs/hub/models-downloading).
 
@@ -33,6 +33,7 @@ Private and gated repositories requiring credentials are not supported by this f
 - Requests use direct connections, without environment HTTP proxies, authentication tokens or cookies. Allow the repository and its CDN hosts through your server's outbound firewall.
 - Cancellation is cooperative. A stalled network operation can take about 30 seconds to time out. There is a six-hour download deadline, checked between network operations.
 - Downloads do not automatically load weights or change the active model.
+- A file may be downloaded or imported for storage even if it is too large to use on this system. Selection and loading are blocked when its memory estimate exceeds the available budget. Each load is checked again on the server, including startup and API loads. Lower context, choose a smaller model, close other applications, or unload the current model and refresh if memory is insufficient. The estimate honors container limits and reserves RAM for the operating system/application; GPU memory is not added to system RAM. An estimated fit does not guarantee compatibility, speed or freedom from out-of-memory errors.
 
 ## Restart and troubleshooting
 

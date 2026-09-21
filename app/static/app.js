@@ -1,6 +1,8 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const state = {user:null, setup:false, conversations:[], knowledge:[], assistants:[], conversation:null, kb:null, busy:false, csrf:""};
+const modelSafety = {report:null,context:null,checkedAt:0,pending:false,error:"",version:0,timer:null,expiry:null,loading:false,serverLoading:false,filesRefreshing:false,filesVersion:0,initialized:false};
+const MODEL_RESOURCE_MAX_AGE = 30000;
 function node(tag, text, className) {
   const el = document.createElement(tag);
   if (text !== undefined) el.textContent = text;
@@ -167,6 +169,7 @@ async function refreshDocuments() {
 }
 async function refreshStatus() {
   const s=await api("/status"), model=s.model;
+  modelSafety.serverLoading=Boolean(model.loading);renderModelResources();
   $("model-pill").textContent=model.loading ? "Loading model…" : model.loaded ? model.config.filename : "Model not loaded";
   $("model-pill").classList.toggle("online",model.loaded);
   $("search-pill").textContent=s.search==="hybrid"?"Hybrid search":"Keyword search";
@@ -176,17 +179,101 @@ async function refreshStatus() {
     ". Document allowance: "+s.storage_limit_mb+" MB per user.";
 }
 async function refreshModels() {
-  const result=await api("/models"), previous=$("model-file").value;
-  $("model-file").replaceChildren(new Option("Select a GGUF file",""));
-  result.models.forEach(m=>$("model-file").add(new Option(m.filename+" · "+(m.bytes/1073741824).toFixed(2)+" GB",m.filename)));
-  $("model-file").value=result.config?.filename || previous;
-  if(result.config) {
-    for(const [id,key] of [["context","context"],["threads","threads"],["gpu","gpu_layers"],["tokens","max_tokens"],["temperature","temperature"],["format","chat_format"]]) {
-      $("model-"+id).value=result.config[key] ?? "";
+  const version=++modelSafety.filesVersion;
+  modelSafety.filesRefreshing=true;invalidateModelResources();
+  try {
+    const result=await api("/models");
+    if(version!==modelSafety.filesVersion)return;
+    const previous=$("model-file").value;
+    $("model-file").replaceChildren(new Option("Select a GGUF file",""));
+    result.models.forEach(m=>{
+      const option=new Option(m.filename+" · "+formatMemory(m.bytes),m.filename);
+      option.dataset.label=option.textContent;$("model-file").add(option);
+    });
+    $("model-file").value=previous || (!modelSafety.initialized ? result.config?.filename || "" : "");
+    if(result.config && !modelSafety.initialized) {
+      for(const [id,key] of [["context","context"],["threads","threads"],["gpu","gpu_layers"],["tokens","max_tokens"],["temperature","temperature"],["format","chat_format"]]) {
+        $("model-"+id).value=result.config[key] ?? "";
+      }
     }
+    modelSafety.initialized=true;modelSafety.serverLoading=Boolean(result.loading);
+    $("model-details").textContent=result.loading?"Loading model…":result.error?"Load error: "+result.error:
+      result.loaded?"Loaded: "+result.config.filename+(result.busy?" · responding":" · ready"):"No model loaded.";
+  } catch(error) {
+    if(version===modelSafety.filesVersion)modelSafety.error="Could not refresh model files: "+error.message;
+    throw error;
+  } finally {
+    if(version===modelSafety.filesVersion){modelSafety.filesRefreshing=false;renderModelResources();}
   }
-  $("model-details").textContent=result.loading?"Loading model…":result.error?"Load error: "+result.error:
-    result.loaded?"Loaded: "+result.config.filename+(result.busy?" · responding":" · ready"):"No model loaded.";
+  if(version===modelSafety.filesVersion)await refreshModelResources();
+}
+function formatMemory(bytes) {
+  return typeof bytes==="number" && Number.isFinite(bytes) ? (bytes/1073741824).toFixed(2)+" GiB" : "unavailable";
+}
+function freshModelResources() {
+  return !modelSafety.pending && !modelSafety.filesRefreshing && modelSafety.report &&
+    modelSafety.context===Number($("model-context").value) && Date.now()-modelSafety.checkedAt<MODEL_RESOURCE_MAX_AGE;
+}
+function selectedModelAssessment() {
+  return freshModelResources() ? modelSafety.report.models.find(m=>m.filename===$("model-file").value) : null;
+}
+function renderModelResources() {
+  const fresh=freshModelResources(),report=modelSafety.report,assessment=selectedModelAssessment();
+  const working=modelSafety.loading || modelSafety.serverLoading;
+  $("load-model").disabled=working || !assessment?.allowed;
+  $("recommend-model").disabled=working || !fresh || !report.recommended?.filename;
+  $("refresh-model-resources").disabled=modelSafety.pending || modelSafety.filesRefreshing || working;
+  for(const option of $("model-file").options) {
+    if(!option.value)continue;
+    const fit=fresh ? report.models.find(m=>m.filename===option.value) : null;
+    option.disabled=!fit?.allowed;
+    option.textContent=(option.dataset.label || option.value)+(fit && !fit.allowed ? " · unavailable" : "");
+  }
+  $("model-resource-memory").textContent=report ? "RAM: "+formatMemory(report.ram_available)+" available / "+formatMemory(report.ram_total)+" total. Reserved for other work: "+formatMemory(report.reserve_bytes)+". Model budget: "+formatMemory(report.budget_bytes)+"." : "Available RAM has not been checked for these settings.";
+  let text="Select a GGUF file to see its estimated memory use.";
+  if(modelSafety.pending || modelSafety.filesRefreshing)text="Checking this computer and model memory requirements…";
+  else if(modelSafety.error)text=modelSafety.error+" Loading is blocked until a resource check succeeds.";
+  else if(!fresh)text="Resource check required. Recheck resources before loading.";
+  else if(assessment)text="Estimated memory: "+formatMemory(assessment.estimated_bytes)+" at "+assessment.context+" context tokens. "+(assessment.allowed ? "Fits the current RAM budget. " : "Cannot load this model. ")+(assessment.reason || "");
+  else if($("model-file").value)text="This file has no current resource assessment. Refresh files before loading.";
+  $("model-resource-assessment").textContent=text;
+  $("model-resource-assessment").classList.toggle("error-text",Boolean(modelSafety.error || (fresh && assessment && !assessment.allowed)));
+  $("model-resource-guidance").textContent=fresh && !report.recommended?.filename ?
+    (report.models.length ? "No local model fits the current RAM budget. " : "No local GGUF models found. ")+"Import or download a smaller GGUF, close other apps, or unload the current model and recheck resources." :
+    report?.note || "Memory checks include context and keep RAM available for other work. The server checks again before loading.";
+  $("model-resource-list").replaceChildren();
+  if(fresh)report.models.forEach(model=>$("model-resource-list").append(node("p",model.filename+" · "+formatMemory(model.estimated_bytes)+" estimated · "+(model.allowed ? "Fits. " : "Unavailable. ")+(model.reason || ""))));
+  else $("model-resource-list").append(node("p","A current resource check is required to assess local models."));
+}
+function invalidateModelResources() {
+  ++modelSafety.version;clearTimeout(modelSafety.timer);clearTimeout(modelSafety.expiry);
+  modelSafety.report=null;modelSafety.checkedAt=0;modelSafety.error="";modelSafety.pending=false;
+  renderModelResources();
+}
+async function refreshModelResources() {
+  invalidateModelResources();
+  const context=Number($("model-context").value),version=modelSafety.version;
+  if(!$("model-context").checkValidity() || !Number.isInteger(context)) {
+    modelSafety.error="Enter a whole context value between 1024 and 32768 tokens.";renderModelResources();return null;
+  }
+  if(modelSafety.filesRefreshing)return null;
+  modelSafety.pending=true;renderModelResources();
+  try {
+    const report=await api("/models/resources?context="+context);
+    if(version!==modelSafety.version || context!==Number($("model-context").value))return null;
+    if(!Array.isArray(report.models))throw new Error("Resource information is unavailable.");
+    modelSafety.report=report;modelSafety.context=context;modelSafety.checkedAt=Date.now();
+    modelSafety.expiry=setTimeout(()=>{
+      renderModelResources();
+      if(state.user?.role==="admin" && !$("view-models").hidden)refreshModelResources();
+    },MODEL_RESOURCE_MAX_AGE);
+    return report;
+  } catch(error) {
+    if(version===modelSafety.version)modelSafety.error="Could not check system resources: "+error.message;
+    return null;
+  } finally {
+    if(version===modelSafety.version){modelSafety.pending=false;renderModelResources();}
+  }
 }
 async function refreshUsers() {
   const users=await api("/users"); $("user-list").replaceChildren();
@@ -329,14 +416,35 @@ on("assistant-form","submit",async e=>{
 });
 on("assistant-reset","click",()=>{$("assistant-form").reset();$("assistant-id").value="";$("assistant-form-title").textContent="Create assistant";});
 on("refresh-models","click",refreshModels);
+on("refresh-model-resources","click",refreshModelResources);
+on("model-file","change",refreshModelResources);
+on("model-context","input",()=>{
+  invalidateModelResources();modelSafety.pending=true;renderModelResources();
+  modelSafety.timer=setTimeout(refreshModelResources,300);
+});
+on("model-context","change",refreshModelResources);
+on("recommend-model","click",async()=>{
+  const report=await refreshModelResources(),recommended=report?.recommended;
+  if(!recommended?.filename)return;
+  if(!Array.from($("model-file").options).some(option=>option.value===recommended.filename)) {
+    await refreshModels();notify("Model files changed. Choose a model for this system again.");return;
+  }
+  $("model-file").value=recommended.filename;applySuggestedCpuSettings(recommended);
+  await refreshModelResources();
+  notify(selectedModelAssessment()?.allowed ? "Suitable model and CPU settings selected. Review the form, then click Load model to switch." : "Available resources changed. Review the memory check before loading.");
+});
 on("model-form","submit",async e=>{
-  e.preventDefault();$("load-model").disabled=true;notify("Loading model. Large files can take a few minutes.");
+  e.preventDefault();
+  if(modelSafety.loading || modelSafety.serverLoading)return;
+  if(!selectedModelAssessment()?.allowed)throw new Error("Select a model that fits a current resource check before loading.");
+  modelSafety.loading=true;renderModelResources();
   try {
-    await api("/models/load",{method:"POST",body:{filename:$("model-file").value,context:Number($("model-context").value),
-      threads:Number($("model-threads").value),gpu_layers:Number($("model-gpu").value),max_tokens:Number($("model-tokens").value),
-      temperature:Number($("model-temperature").value),chat_format:$("model-format").value||null}});
+    await refreshModelResources();
+    if(!selectedModelAssessment()?.allowed)throw new Error("This model cannot load with the current resources. Review the memory check.");
+    notify("Loading model. Large files can take a few minutes.");
+    await api("/models/load",{method:"POST",body:modelFormConfig()});
     notify("Model loaded.");await refreshModels();await refreshStatus();await refreshWizard();
-  } finally {$("load-model").disabled=false;}
+  } finally {modelSafety.loading=false;renderModelResources();}
 });
 on("unload-model","click",async()=>{await api("/models/unload",{method:"POST"});await refreshModels();await refreshStatus();});
 on("user-form","submit",async e=>{
@@ -372,6 +480,12 @@ function modelFormConfig() {
     gpu_layers:Number($("model-gpu").value),max_tokens:Number($("model-tokens").value),
     temperature:Number($("model-temperature").value),chat_format:$("model-format").value||null};
 }
+function applySuggestedCpuSettings(recommended) {
+  $("model-context").value=recommended.context;$("model-threads").value=recommended.threads;$("model-gpu").value=0;
+  const responseLimit=Math.max(64,Math.floor(recommended.context/2));
+  const current=Number($("model-tokens").value);
+  $("model-tokens").value=Math.min(Number.isInteger(current) && current>=64 ? current : 512,responseLimit);
+}
 async function refreshProfiles() {
   modelProfiles=await api('/model-profiles');
   $("profile-list").replaceChildren(new Option('Select a saved profile',''));
@@ -395,9 +509,11 @@ async function refreshWizard() {
 on('wizard-refresh','click',refreshWizard);
 on('wizard-models','click',async()=>{showView('models');await refreshModels();await refreshProfiles();});
 on('wizard-knowledge','click',()=>showView('knowledge'));
-on('apply-recommendations','click',()=>{
+on('apply-recommendations','click',async()=>{
   if(!machineReport)return;
-  $("model-context").value=machineReport.recommended.context;$("model-threads").value=machineReport.recommended.threads;$("model-gpu").value=0;
+  await refreshModels();
+  applySuggestedCpuSettings(machineReport.recommended);
+  await refreshModelResources();
   showView('models');notify('Suggested CPU settings applied. Select a model, then load it.');
 });
 on('wizard-test','click',async()=>{
@@ -410,10 +526,11 @@ on('save-profile','click',async()=>{
   await api('/model-profiles',{method:'POST',body:{name:$("profile-name").value,config:modelFormConfig()}});
   await refreshProfiles();notify('Profile saved.');
 });
-on('use-profile','click',()=>{
+on('use-profile','click',async()=>{
   const p=modelProfiles.find(x=>x.id===Number($("profile-list").value));if(!p)return;
   $("model-file").value=p.config.filename;
   for(const [id,key] of [['context','context'],['threads','threads'],['gpu','gpu_layers'],['tokens','max_tokens'],['temperature','temperature'],['format','chat_format']]) $("model-"+id).value=p.config[key]??'';
+  await refreshModelResources();
   notify('Profile applied to the form. Click Load model to activate it.');
 });
 on('delete-profile','click',async()=>{

@@ -26,7 +26,7 @@ The public iframe sends requests from its own AI-server origin. Its embedding si
 | Health/setup | `GET /api/health`, `GET/POST /api/setup` |
 | Session | `POST /api/login`, `GET /api/me`, `POST /api/logout` |
 | Accounts | `GET/POST /api/users`, `POST /api/users/{id}/enable`, `POST /api/users/{id}/disable` |
-| Wizard/model | `GET /api/system/check`, `POST /api/system/model-test`, `POST /api/system/complete`, `GET /api/models`, `POST /api/models/load`, `POST /api/models/unload` |
+| Wizard/model | `GET /api/system/check`, `POST /api/system/model-test`, `POST /api/system/complete`, `GET /api/models`, `GET /api/models/resources`, `POST /api/models/load`, `POST /api/models/unload` |
 | Model files/profiles | `POST /api/models/import`, `GET /api/models/inspect`, `GET/POST /api/model-profiles`, `DELETE /api/model-profiles/{id}` |
 | Knowledge | `GET/POST /api/knowledge`, `DELETE /api/knowledge/{id}`, `GET/POST /api/knowledge/{id}/documents` |
 | Documents | `GET /api/documents/{id}/download`, `GET /api/documents/{id}/preview`, `POST /api/documents/{id}/reindex`, `DELETE /api/documents/{id}` |
@@ -156,6 +156,12 @@ A public endpoint is anonymous and may be called directly. Its HTTPS origin list
 | 507 | Insufficient staging space. |
 
 Errors raised during a stream arrive as events rather than a replacement HTTP status. Keep sensitive response bodies, session values and document excerpts out of diagnostic logs.
+
+## Model resources (administrator)
+
+`GET /api/models/resources?context=4096` returns current memory resources, assessments for installed GGUF files at the requested context, and a recommendation with suggested CPU settings. The recommendation chooses the largest eligible file at the suggested context, reducing to 2,048 or 1,024 tokens only if none fit; its context can differ from the requested value. Context contributes to the estimate. This read-only endpoint does not load or download a model.
+
+`POST /api/models/load` checks current resources again and rejects a model estimated to exceed available memory. A previous assessment or saved profile cannot bypass this check; startup reloads use the same check. Estimates reserve RAM for the operating system/application and honor container memory limits. GPU memory is not added to the system RAM budget, even when GPU layers are requested. Passing an estimate does not guarantee model/backend compatibility or prevent every out-of-memory failure. Importing or downloading a file does not establish that it can be loaded.
 
 ## Model downloads (administrator)
 

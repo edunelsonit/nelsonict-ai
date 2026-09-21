@@ -53,7 +53,7 @@ Version 1.2 was merged into main in [PR #1](https://github.com/edunelsonit/nelso
 - Setup wizard with RAM/CPU/GPU/dependency checks and a local model test.
 - Private knowledge bases with explicit reader/editor sharing and personal assistants.
 - GGUF browser import with SHA-256 verification and saved model profiles.
-- Local GGUF loading/unloading, CPU/GPU/context controls through llama-cpp-python.
+- Local GGUF loading/unloading, CPU/GPU/context controls, and memory-aware model selection through llama-cpp-python.
 - Streaming responses, stop generation, persistent history, rename, delete, and JSON export.
 - Follow-up questions, full-document summaries, comparisons, and clickable source previews.
 - PDF, DOCX, TXT, Markdown, CSV and XLSX ingestion, plus optional PDF OCR and a durable processing queue.
@@ -117,7 +117,7 @@ The build compiles the native inference dependency and can take several minutes.
 2. Paste the setup token printed by the final command.
 3. Create an administrator username and password of at least 12 characters.
 4. Use **Setup wizard** to check dependencies, then **Models → Download a GGUF model** for a public Hugging Face repository or direct HTTPS file link. You can also import a local GGUF file or copy one to the host models folder. See [model downloads](docs/MODEL-DOWNLOADS.md).
-5. Open **Models → Refresh files**, select it, and click **Load model**.
+5. Open **Models → Refresh files**, use **Choose model for this system** or select an eligible file, review its memory estimate, and click **Load model**.
 6. Start with **4096 context**, **4 CPU threads**, **0 GPU layers**, and **512 response tokens**. Lower settings if memory is limited.
 7. Run the wizard’s local model test, then open **Knowledge**, create a collection, and upload a supported document.
 8. Wait for **Ready**, then choose **Document answers** and that knowledge base in Chat.
@@ -276,6 +276,10 @@ See [the 1.2 upgrade guide](docs/UPGRADE-1.2.md) for current migration and featu
 
 The operator supplies model files. Choose a model supported by the installed inference version and check its own licence and chat-template requirements.
 
+**Choose model for this system** selects the largest installed GGUF that passes the memory estimate at the suggested context and applies suggested CPU settings to the form. It reduces context only if no file fits. Review the available RAM, estimate and reasons, then click **Load model** to switch. This action does not download files or switch models automatically. Files estimated to exceed available memory cannot be selected or loaded.
+
+The server checks current memory again for every load, including API requests and startup reloads; saved profiles cannot bypass the check. The estimate includes model weights and context, reserves memory for the operating system and application, and honors container memory limits. It requires enough system RAM even when GPU layers are selected; GPU memory is not added to system RAM. Passing the estimate does not guarantee backend/architecture compatibility, speed, or freedom from out-of-memory errors. If blocked, close other applications, lower context, choose a smaller model, or unload the current model and refresh the assessment. Imports and downloads remain available for storage even when a file is too large to load.
+
 - Only local GGUF files inside NELSON_MODELS_DIR appear in the picker.
 - Administrators can stream-import GGUF files up to NELSON_MAX_MODEL_MB (20,480 MB default). Files are staged, metadata checked, and atomically installed without overwriting an existing filename.
 - Paste a publisher SHA-256 to verify the upload, or calculate a checksum through Inspect file. A checksum does not establish model trustworthiness.
@@ -283,7 +287,7 @@ The operator supplies model files. Choose a model supported by the installed inf
 - Docker's models mount is now writable for imports. The host directory must permit container UID 10001 to write; copying models manually remains available.
 - Model paths are restricted to the configured models directory. Administrators can explicitly download public GGUF files over HTTPS, with progress, cancellation and optional SHA-256 verification. See [model downloads](docs/MODEL-DOWNLOADS.md).
 - Leave chat format blank to use GGUF metadata; override only when the model requires it.
-- Saved configuration reloads on startup. Load errors appear in Models.
+- Startup attempts to reload the saved configuration after a fresh resource check. Load errors appear in Models.
 - Loading a replacement may unload the old model first to free memory.
 - The default Docker image is CPU-only. GPU layer settings do not add GPU support.
 - Native NVIDIA/Metal/Vulkan acceleration requires the corresponding inference build.
@@ -484,7 +488,7 @@ Open `/docs` on your running instance for the local API reference and `/openapi.
 | Assistants | `GET/POST /api/assistants`, `PUT/DELETE /api/assistants/{id}` |
 | Conversations | `GET/POST /api/conversations`, `PUT/DELETE /api/conversations/{id}`, `GET /api/conversations/{id}/messages`, `GET /api/conversations/{id}/export` |
 | Streaming chat | `POST /api/conversations/{id}/chat`, `POST /api/conversations/{id}/stop` |
-| Model management (admin) | `GET /api/models`, `POST /api/models/load`, `POST /api/models/unload`, `POST /api/models/import`, `GET /api/models/inspect` |
+| Model management (admin) | `GET /api/models`, `GET /api/models/resources?context=4096`, `POST /api/models/load`, `POST /api/models/unload`, `POST /api/models/import`, `GET /api/models/inspect` |
 | Model downloads (admin) | `GET/POST /api/models/downloads`, `POST /api/models/downloads/{id}/cancel` |
 | Profiles (admin) | `GET/POST /api/model-profiles`, `DELETE /api/model-profiles/{id}` |
 | Status and backup | `GET /api/status`, `GET /api/backup` (backup is admin-only) |
@@ -518,6 +522,7 @@ Use `task: "summary"` or `task: "compare"` for complete analysis. For general ch
 | Model list is empty | Place a `.gguf` file in the configured models directory, or import it as administrator, then refresh. For Docker use the host `./models` bind mount. |
 | GGUF import permission error | Check directory ownership and permissions for the running service. Docker uses UID `10001`; give it write access to the model directory, or copy models manually. |
 | Import rejected / checksum mismatch | Confirm the upload limit, available staging space, expected publisher hash, valid GGUF metadata, and that the destination filename is not already present. Also check the reverse proxy body limit. |
+| Model blocked by memory estimate | Review the reason in Models. Close other applications, lower context, select a smaller model, or unload the current model and refresh. GPU memory does not increase the system RAM budget. |
 | Model load fails | Read the load error, check inference installation and model compatibility, lower context/GPU settings, and verify available memory. Metadata inspection alone does not prove a file loads. |
 | GPU detected but inference uses CPU | Install a native inference build for that accelerator. The default container is CPU-only; changing the layer count does not change its build. |
 | Queue full / model busy | Wait or cancel an earlier request. Administrators can pause admission and cancel active work before changing models. Model changes still require an idle model. |

@@ -28,7 +28,11 @@ Use **Models** to import a local GGUF, optionally match a publisher SHA-256, ins
 
 Start with CPU settings appropriate to the available memory and cores. Model weights, context cache, document processing and optional embeddings all consume RAM. GGUF header/metadata inspection does not validate all tensor data or establish compatibility. GPU settings require a corresponding native inference build; the standard Docker image is CPU-only.
 
-Applying a saved profile only fills the form; click **Load model** to activate it. Normal startup attempts to reload the last model configuration. Restoring a backup clears automatic loading and requires review on the target computer.
+Click **Choose model for this system** to select the largest installed GGUF that passes the conservative memory estimate at the suggested context and apply suggested CPU settings. Context is reduced to 2,048 or 1,024 tokens only if no file fits at the suggested value. Models shows available RAM, each file's estimate and reasons for blocked files. Review the settings, then click **Load model**; choosing a model does not download anything or switch the active model automatically. Oversized files remain available for storage but cannot be selected or loaded.
+
+Every load receives a fresh server-side check, including API requests and startup reloads. The estimate accounts for context, reserves RAM for the operating system and application, and honors container memory limits. The full system RAM check applies even with GPU layers selected; GPU memory is not added to the budget. A passing estimate does not guarantee architecture/backend support, speed or protection from all out-of-memory failures. If blocked, close other applications, reduce context, select a smaller model, or unload the current model and refresh.
+
+Applying a saved profile only fills the form; click **Load model** to activate it. Profiles cannot bypass the memory check. Normal startup attempts to reload the last model configuration only if the fresh resource check passes. Restoring a backup clears automatic loading and requires review on the target computer.
 
 ## Keep the queue manageable
 
