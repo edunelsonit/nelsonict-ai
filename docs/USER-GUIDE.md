@@ -4,7 +4,7 @@ Nelsonict AI runs a language model on the computer or server hosting the applica
 
 ## Sign in and find your workspace
 
-Open the address supplied by your administrator and sign in. Passwords contain 12–128 characters. If you cannot sign in, ask the administrator to check your account or use server-side password recovery; email password reset is not provided.
+Open the address supplied by your administrator and sign in. Passwords contain 12–128 characters. If you cannot sign in, ask an administrator to reset your password; email password reset is not provided.
 
 Use the navigation to open Chat, Knowledge, Assistants, Quality & evaluation, or Settings & backup. Administrators also see setup, model and operations controls. Choose light or dark appearance in Settings. Recent conversations appear in the sidebar.
 

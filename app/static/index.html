@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#0b1525">
 <title>Nelsonict AI · Your knowledge, locally</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/operations.js"></script><script defer src="/model-downloads.js"></script>
+<link rel="stylesheet" href="/style.css"><script defer src="/app.js?v=1.2.2"></script><script defer src="/operations.js"></script><script defer src="/model-downloads.js"></script>
 </head>
 <body>
 <div id="auth" class="auth-wrap">
@@ -19,10 +19,11 @@
  <p id="auth-description">Continue to your private AI workspace.</p>
  <form id="auth-form">
  <label id="setup-label" hidden>Setup token<input id="setup-token" autocomplete="off"><small>On the server, run: python -m app.cli setup-token</small></label>
+ <label id="recovery-token-label" hidden>Recovery token<input id="recovery-token" autocomplete="off"><small>On the server, run: python -m app.cli recovery-token</small></label>
  <label>Username<input id="username" autocomplete="username" minlength="3" maxlength="64" required></label>
  <label>Password<input id="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required></label>
  <button class="primary" id="sign-in">Sign in →</button>
- </form><p class="muted">Your administrator creates member accounts. No external AI account is required.</p>
+ </form><button id="recovery-toggle" class="quiet" type="button">Use recovery token</button><p class="muted">Your administrator creates member accounts. No external AI account is required.</p>
  </section>
 </div>
 <div id="workspace" hidden>
@@ -139,6 +140,7 @@ https://www.nelsonict.com.ng</textarea></label><button class="primary">Create pu
  </main>
 </div>
 <dialog id="source-preview"><div class="row"><h2 id="preview-title">Source preview</h2><button id="close-preview">Close</button></div><div class="row"><label>Page / source unit<input id="preview-page" type="number" min="1" value="1"></label><button id="preview-go">Go</button><a id="preview-download" class="button">Download original</a></div><div id="preview-content"></div></dialog>
+<dialog id="reset-password-dialog"><form id="reset-password-form"><div class="row"><h2>Reset password</h2><button id="reset-password-close" type="button">Close</button></div><p id="reset-password-user"></p><label>New password<input id="reset-password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label><label>Confirm new password<input id="reset-password-confirm" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label><button class="primary">Reset password</button></form></dialog>
 <dialog id="migration-dialog"><div class="row"><h2>Restore & review this computer</h2><button id="migration-close">Close</button></div><p>The backup is restored into a separate folder. Current data stays available until both services restart. Model files must be copied separately.</p>
 <form id="migration-upload"><label>Backup ZIP<input id="migration-file" type="file" accept=".zip" required></label><button id="migration-stage" class="primary">Upload & validate backup</button><progress id="migration-progress" max="100" value="0"></progress></form><pre id="migration-review" class="message-text"></pre>
 <form id="migration-activate" hidden><label>Restored data directory<input id="migration-data" readonly></label><label>GGUF directory on this server<input id="migration-models" required></label><label>Embedding directory (optional)<input id="migration-embedding"></label><label>Allowed hostnames / IP addresses<input id="migration-hosts" required></label><label>Listen address<input id="migration-bind" required></label><label>Port<input id="migration-port" type="number" min="1024" max="65535" required></label><label><input id="migration-secure" type="checkbox"> HTTPS secure cookies</label><div class="two-column"><label>CPU threads<input id="migration-threads" type="number" min="1" max="128" value="4"></label><label>Context tokens<input id="migration-context" type="number" min="1024" max="32768" value="4096"></label><label>GPU layers<input id="migration-gpu" type="number" min="-1" max="200" value="0"></label></div><p>Reviewed hardware settings are saved for the next model setup. Automatic model loading stays off. Docker port mappings and systemd command-line bind options must be updated in the deployment configuration.</p><label>Type RESTORE to activate on restart<input id="migration-confirm" required pattern="RESTORE"></label><button class="primary">Prepare activation</button><button id="migration-discard" type="button">Discard staged restore</button></form><button id="migration-restart" hidden>Restart managed application</button><p id="migration-result" role="status"></p></dialog>

@@ -15,6 +15,14 @@ class NewUser(Credentials):
     role: Literal["admin", "member"] = "member"
 
 
+class Password(BaseModel):
+    password: str = Field(min_length=12, max_length=128)
+
+
+class Recovery(Credentials):
+    recovery_token: str = Field(min_length=32, max_length=128)
+
+
 class Name(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 

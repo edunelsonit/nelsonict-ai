@@ -28,7 +28,7 @@ from .document_chat import selected_documents, all_passages, summarise
 from .security import knowledge_access
 from .formats import validate, FORMATS
 from .schemas import Share, Profile
-from .schemas import Credentials, Setup, NewUser, Name, Assistant, Conversation, Chat, ModelConfig
+from .schemas import Credentials, Setup, NewUser, Password, Recovery, Name, Assistant, Conversation, Chat, ModelConfig
 from .security import current_user, administrator, owned, owned_document, rate_limit, token_hash, hasher, verify
 
 log = logging.getLogger("nelsonict")
@@ -45,6 +45,17 @@ def bootstrap_token():
     return path.read_text().strip()
 
 
+def recovery_token(rotate=False):
+    path = settings.data_dir / "recovery-token.txt"
+    if rotate or not path.exists():
+        token = secrets.token_urlsafe(32)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(token)
+        path.chmod(0o600)
+        return token
+    return path.read_text().strip()
+
+
 @asynccontextmanager
 async def lifespan(app):
     db.initialize()
@@ -56,6 +67,8 @@ async def lifespan(app):
         if not db.one("SELECT id FROM users LIMIT 1"):
             bootstrap_token()
             log.warning("First-run token is in %s/setup-token.txt", settings.data_dir)
+        elif db.one("SELECT id FROM users WHERE role='admin' LIMIT 1"):
+            recovery_token()
         config = db.get_setting("model_config")
         def autoload():
             if config:
@@ -146,6 +159,7 @@ def setup(body: Setup, request: Request):
         conn.execute("INSERT INTO users(username,password,role) VALUES(?,?,'admin')",
                      (body.username.lower(), encoded))
     (settings.data_dir / "setup-token.txt").unlink(missing_ok=True)
+    recovery_token()
     return {"created": True}
 
 
@@ -167,6 +181,19 @@ def login(body: Credentials, request: Request, response: Response):
     response.set_cookie("nelson_session", token, httponly=True, samesite="strict",
                         secure=settings.cookie_secure, max_age=settings.session_hours * 3600)
     return {"id": row["id"], "username": row["username"], "role": row["role"], "csrf": csrf}
+
+
+@app.post("/api/recover")
+def recover_administrator(body: Recovery, request: Request):
+    rate_limit("recovery-ip:" + (request.client.host if request.client else "local"), limit=10)
+    rate_limit("recovery-user:" + body.username.lower(), limit=10)
+    row = db.one("SELECT id FROM users WHERE username=? AND role='admin'", (body.username.lower(),))
+    if not row or not secrets.compare_digest(body.recovery_token, recovery_token()):
+        raise HTTPException(403, "Invalid recovery token or administrator username.")
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET password=?,disabled=0 WHERE id=?", (hasher.hash(body.password), row["id"]))
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (row["id"],))
+    return {"ok": True}
 
 
 @app.get("/api/me")
@@ -212,6 +239,17 @@ def disable_user(identifier: int, user=Depends(administrator)):
 @app.post("/api/users/{identifier}/enable")
 def enable_user(identifier: int, user=Depends(administrator)):
     db.execute("UPDATE users SET disabled=0 WHERE id=?", (identifier,))
+    return {"ok": True}
+
+
+@app.post("/api/users/{identifier}/reset-password")
+def reset_user_password(identifier: int, body: Password, user=Depends(administrator)):
+    with db.connect() as conn:
+        row = conn.execute("SELECT id FROM users WHERE id=?", (identifier,)).fetchone()
+        if not row:
+            raise HTTPException(404, "User not found.")
+        conn.execute("UPDATE users SET password=?,disabled=0 WHERE id=?", (hasher.hash(body.password), identifier))
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (identifier,))
     return {"ok": True}
 
 

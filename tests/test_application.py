@@ -8,6 +8,7 @@ from app.config import settings
 from app.index_document import index_document
 from app.inference import runtime
 from app.maintenance import create_backup, restore_backup
+from app.main import recovery_token
 from app.retrieval import chunk_text, search
 from app.worker import claim
 from conftest import sign_in
@@ -62,6 +63,35 @@ def test_password_hash_and_logout(admin):
     assert db.one("SELECT password FROM users")["password"].startswith("$argon2id$")
     assert admin.post("/api/logout").status_code == 200
     assert admin.get("/api/me").status_code == 401
+
+
+def test_administrator_can_reset_password_and_revoke_sessions(admin):
+    created = admin.post("/api/users", json={"username":"member", "password":"member-password-123"})
+    identifier = created.json()["id"]
+    sign_in(admin, "member", "member-password-123")
+    previous_session = admin.cookies.get("nelson_session")
+    sign_in(admin)
+
+    response = admin.post(f"/api/users/{identifier}/reset-password", json={"password":"replacement-password-123"})
+    assert response.status_code == 200, response.text
+    assert db.one("SELECT password FROM users WHERE id=?", (identifier,))["password"].startswith("$argon2id$")
+
+    admin.cookies.clear()
+    admin.cookies.set("nelson_session", previous_session)
+    assert admin.get("/api/me").status_code == 401
+    assert admin.post("/api/login", json={"username":"member", "password":"member-password-123"}).status_code == 401
+    assert admin.post("/api/login", json={"username":"member", "password":"replacement-password-123"}).status_code == 200
+
+
+def test_recovery_token_resets_administrator_and_revokes_sessions(admin):
+    token = recovery_token()
+    response = admin.post("/api/recover", json={
+        "username":"owner", "password":"recovered-password-123", "recovery_token":token,
+    })
+    assert response.status_code == 200, response.text
+    assert admin.get("/api/me").status_code == 401
+    assert admin.post("/api/login", json={"username":"owner", "password":"correct-password-123"}).status_code == 401
+    assert admin.post("/api/login", json={"username":"owner", "password":"recovered-password-123"}).status_code == 200
 
 
 def test_user_isolation(admin,kb):

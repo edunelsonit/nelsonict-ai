@@ -10,7 +10,7 @@ The running instance serves an offline reference at `/docs` and its exact OpenAP
 |---|---|
 | Authenticated read | Session cookie. |
 | Authenticated mutation | Session cookie, `X-Nelson-Client: web`, and `X-CSRF-Token` matching the session. |
-| Setup/login | Application client header; setup also needs the local setup token. |
+| Setup/login | Application client header; setup also needs the local setup token. `POST /api/recover` resets an administrator password with the local recovery token. |
 | Anonymous public mutation | Application client header; no workspace session or CSRF token. |
 
 Browser origins are checked on mutations. Do not try to work around rejected origin/host checks by disabling the protections. Correct the reverse proxy, configured hostnames or calling origin. There are no API keys, bearer-token grants or general cross-origin CORS configuration in this implementation.
@@ -25,7 +25,7 @@ The public iframe sends requests from its own AI-server origin. Its embedding si
 |---|---|
 | Health/setup | `GET /api/health`, `GET/POST /api/setup` |
 | Session | `POST /api/login`, `GET /api/me`, `POST /api/logout` |
-| Accounts | `GET/POST /api/users`, `POST /api/users/{id}/enable`, `POST /api/users/{id}/disable` |
+| Accounts | `GET/POST /api/users`, `POST /api/users/{id}/enable`, `POST /api/users/{id}/disable`, `POST /api/users/{id}/reset-password` |
 | Wizard/model | `GET /api/system/check`, `POST /api/system/model-test`, `POST /api/system/complete`, `GET /api/models`, `GET /api/models/resources`, `POST /api/models/load`, `POST /api/models/unload` |
 | Model files/profiles | `POST /api/models/import`, `GET /api/models/inspect`, `GET/POST /api/model-profiles`, `DELETE /api/model-profiles/{id}` |
 | Knowledge | `GET/POST /api/knowledge`, `DELETE /api/knowledge/{id}`, `GET/POST /api/knowledge/{id}/documents` |

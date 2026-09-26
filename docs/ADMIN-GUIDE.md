@@ -10,7 +10,7 @@ Create the first administrator through the browser. Public registration closes a
 
 ## Manage accounts and access
 
-Create member or administrator accounts in **Settings & backup → User accounts**. Use individual accounts rather than sharing an administrator login. Enable/disable accounts there as needed; you cannot disable your own account through that control. Disabling an account revokes its sessions and cancels its private queued/active requests.
+Create member or administrator accounts in **Settings & backup → User accounts**. Use individual accounts rather than sharing an administrator login. Enable/disable accounts there as needed; you cannot disable your own account through that control. Reset passwords there when a user loses access; this re-enables the account and revokes its active sessions. Disabling an account revokes its sessions and cancels its private queued/active requests.
 
 For server-side password recovery:
 
@@ -19,6 +19,8 @@ python -m app.cli reset-password username
 ```
 
 The CLI prompts for the new password and confirmation, revokes sessions and re-enables the account. Run it with the installation's configuration and data directory.
+
+For browser recovery when all administrators are locked out, select **Use recovery token** on the sign-in page and enter the administrator username, new password, and the locally stored token. Retrieve it only on the server with `python -m app.cli recovery-token`; it is also stored in `data/recovery-token.txt`. The reset revokes all sessions for that administrator. Rotate the token after use with `python -m app.cli recovery-token --rotate` and do not share it with users.
 
 Collection owners manage reader/editor memberships. Administrator status does not automatically grant ordinary API access to all private collections or conversations. Administrators can download complete backups and see explicitly submitted answer reports; server operators can access the underlying files.
 

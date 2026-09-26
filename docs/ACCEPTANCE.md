@@ -26,6 +26,7 @@
 ## Access and recovery
 - Check two member accounts cannot access each other's private documents, chats, or assistants; verify explicitly shared collection permissions separately.
 - Disable an account and verify its existing session fails.
+- Reset an administrator password with the local recovery token and verify its previous session fails.
 - Restore a backup into a fresh directory/volume and verify PDFs/chats/accounts.
 - Verify restored sessions are revoked and model settings need review.
 - Test LAN/HTTPS uploads and streaming from another device.

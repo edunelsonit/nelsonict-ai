@@ -113,6 +113,7 @@ Schema version 3 is current. Versions 1 and 2 migrate automatically and transact
 | Symptom | Action |
 |---|---|
 | Missing setup token | Run python -m app.cli setup-token using the API's data directory. |
+| Lost administrator password | Use the sign-in recovery option with `python -m app.cli recovery-token`, or reset locally with `python -m app.cli reset-password username`. |
 | Empty model list | Copy GGUF into the configured models folder and refresh. |
 | Load error | Check model architecture support, file integrity, RAM, and inference build. |
 | No llama_cpp module | Install requirements-inference.txt or rebuild Docker. |

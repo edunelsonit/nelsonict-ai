@@ -1,6 +1,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-const state = {user:null, setup:false, conversations:[], knowledge:[], assistants:[], conversation:null, kb:null, busy:false, csrf:""};
+const state = {user:null, setup:false, recovering:false, conversations:[], knowledge:[], assistants:[], conversation:null, kb:null, busy:false, csrf:""};
+let passwordResetUser = null;
 const modelSafety = {report:null,context:null,checkedAt:0,pending:false,error:"",version:0,timer:null,expiry:null,loading:false,serverLoading:false,filesRefreshing:false,filesVersion:0,initialized:false};
 const MODEL_RESOURCE_MAX_AGE = 30000;
 function node(tag, text, className) {
@@ -280,6 +281,10 @@ async function refreshUsers() {
   users.forEach(u=>{
     const row=node("div",undefined,"user-row");
     row.append(node("span",u.username+" · "+u.role+(u.disabled?" · disabled":"")));
+    row.append(button("Reset password",()=>{
+      passwordResetUser=u;$("reset-password-user").textContent="Set a new password for "+u.username+". Existing sessions will be signed out.";
+      $("reset-password-form").reset();$("reset-password-dialog").showModal();$("reset-password").focus();
+    }));
     if(u.id!==state.user.id) row.append(button(u.disabled?"Enable":"Disable",async()=>{
       await api("/users/"+u.id+(u.disabled?"/enable":"/disable"),{method:"POST"});await refreshUsers();
     }));
@@ -298,9 +303,26 @@ on("auth-form","submit",async e=>{
   try {
     const credentials={username:$("username").value,password:$("password").value};
     if(state.setup) {await api("/setup",{method:"POST",body:{...credentials,setup_token:$("setup-token").value}});state.setup=false;}
+    if(state.recovering) {
+      await api("/recover",{method:"POST",body:{...credentials,recovery_token:$("recovery-token").value}});
+      state.recovering=false;$("recovery-token").value="";$("recovery-token-label").hidden=true;
+      $("auth-title").textContent="Sign in";$("auth-description").textContent="Continue to your private AI workspace.";
+      $("sign-in").textContent="Sign in →";$("recovery-toggle").textContent="Use recovery token";
+      $("password").value="";notify("Password reset. Sign in with your new password.");return;
+    }
     const user=await api("/login",{method:"POST",body:credentials});
     $("password").value=""; await enter(user);
   } finally { $("sign-in").disabled=false; }
+});
+on("recovery-toggle","click",()=>{
+  if(state.setup)return;
+  state.recovering=!state.recovering;$("recovery-token-label").hidden=!state.recovering;
+  $("recovery-token").required=state.recovering;
+  $("auth-title").textContent=state.recovering?"Recover administrator":"Sign in";
+  $("auth-description").textContent=state.recovering?"Reset an administrator password with a local recovery token.":"Continue to your private AI workspace.";
+  $("sign-in").textContent=state.recovering?"Reset password →":"Sign in →";
+  $("recovery-toggle").textContent=state.recovering?"Use password sign in":"Use recovery token";
+  if(state.recovering)$("recovery-token").focus();
 });
 on("logout","click",async()=>{await api("/logout",{method:"POST"});location.reload();});
 on("new-chat","click",()=>{
@@ -451,15 +473,29 @@ on("user-form","submit",async e=>{
   e.preventDefault();await api("/users",{method:"POST",body:{username:$("new-username").value,password:$("new-password").value,role:$("new-role").value}});
   $("user-form").reset();await refreshUsers();notify("User created.");
 });
+on("reset-password-close","click",()=>$("reset-password-dialog").close());
+on("reset-password-form","submit",async e=>{
+  e.preventDefault();
+  if(!passwordResetUser)throw new Error("Choose a user first.");
+  const password=$("reset-password").value;
+  if(password!==$("reset-password-confirm").value)throw new Error("Passwords do not match.");
+  const resetSelf=passwordResetUser.id===state.user.id;
+  await api("/users/"+passwordResetUser.id+"/reset-password",{method:"POST",body:{password}});
+  $("reset-password-dialog").close();passwordResetUser=null;
+  if(resetSelf){location.reload();return;}
+  await refreshUsers();notify("Password reset and existing sessions signed out.");
+});
 on("theme-toggle","click",()=>{
   document.body.classList.toggle("dark");localStorage.setItem("nelson-theme",document.body.classList.contains("dark")?"dark":"light");
 });
 if(localStorage.getItem("nelson-theme")==="dark") document.body.classList.add("dark");
+$("recovery-token").required=false;
 (async()=>{
   try {
     state.setup=(await api("/setup")).required;
     if(state.setup) {
       $("setup-label").hidden=false;$("setup-token").required=true;
+      $("recovery-toggle").hidden=true;
       $("auth-title").textContent="Create your administrator";
       $("auth-description").textContent="Use the server’s setup token to claim this installation.";
       $("sign-in").textContent="Create administrator →";

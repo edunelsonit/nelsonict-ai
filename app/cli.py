@@ -17,6 +17,8 @@ def main():
     run.add_argument("--host", default=None)
     run.add_argument("--port", type=int, default=None)
     sub.add_parser("setup-token", help="Show local first-run setup token")
+    recovery = sub.add_parser("recovery-token", help="Show or rotate the local administrator recovery token")
+    recovery.add_argument("--rotate", action="store_true", help="Replace the current recovery token")
     backup = sub.add_parser("backup")
     backup.add_argument("file", type=Path)
     restore = sub.add_parser("restore", help="Restore into a new directory")
@@ -40,6 +42,11 @@ def main():
             raise SystemExit("Setup already completed.")
         from .main import bootstrap_token
         print(bootstrap_token())
+    elif args.command == "recovery-token":
+        if not db.one("SELECT id FROM users WHERE role='admin' LIMIT 1"):
+            raise SystemExit("Create an administrator before using recovery.")
+        from .main import recovery_token
+        print(recovery_token(args.rotate))
     elif args.command == "backup":
         from .maintenance import create_backup
         if args.file.exists():
