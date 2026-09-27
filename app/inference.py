@@ -1,10 +1,15 @@
 """One local model; exclusive generation without blocking administration."""
 import threading
 import time
+import re
 from pathlib import Path
 from .config import settings
 from .model_resources import assess_model
 from .schemas import ModelConfig
+
+_STRUCTURED_CONTENT_TEMPLATE = re.compile(
+    r"message\[\s*['\"]content['\"]\s*\]\s*\[\s*0\s*\]\s*\[\s*['\"]type['\"]\s*\]"
+)
 
 class ModelRuntime:
     def __init__(self):
@@ -111,10 +116,18 @@ class ModelRuntime:
         return [{"role": "system", "content": system}, *kept,
                 {"role": "user", "content": question}], selected
 
+    def _chat_messages(self, messages):
+        metadata = getattr(self.model, "metadata", None) or {}
+        template = metadata.get("tokenizer.chat_template", "")
+        if not _STRUCTURED_CONTENT_TEMPLATE.search(template):
+            return messages
+        return [{**message, "content": [{"type": "text", "text": message["content"]}]}
+                if isinstance(message["content"], str) else message for message in messages]
+
     def stream(self, messages, stop):
         started = time.monotonic()
         events = self.model.create_chat_completion(
-            messages=messages, stream=True, max_tokens=self.config["max_tokens"],
+            messages=self._chat_messages(messages), stream=True, max_tokens=self.config["max_tokens"],
             temperature=self.config["temperature"])
         for item in events:
             if stop.is_set() or time.monotonic() - started > 300:

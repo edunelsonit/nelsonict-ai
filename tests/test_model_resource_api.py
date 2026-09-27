@@ -169,6 +169,25 @@ def test_chat_stream_uses_supported_chat_completion_arguments():
                                         "max_tokens": 128, "temperature": 0.4}
 
 
+def test_chat_stream_uses_structured_content_for_matching_gguf_template():
+    class ChatModel:
+        metadata = {"tokenizer.chat_template": "{{ message['content'][0]['type'] }}"}
+
+        def create_chat_completion(self, *, messages, stream, max_tokens, temperature):
+            self.messages = messages
+            return iter([{"choices": [{"delta": {"content": "Grounded"}}]}])
+
+    instance = ModelRuntime()
+    instance.model = ChatModel()
+    instance.config = {"max_tokens": 128, "temperature": 0.4}
+    messages = [{"role": "system", "content": "Use sources."}, {"role": "user", "content": "What is registration?"}]
+    assert list(instance.stream(messages, threading.Event())) == ["Grounded"]
+    assert instance.model.messages == [
+        {"role": "system", "content": [{"type": "text", "text": "Use sources."}]},
+        {"role": "user", "content": [{"type": "text", "text": "What is registration?"}]},
+    ]
+
+
 def test_eligible_switch_closes_old_model_only_after_admission(admin, memory, fake_inference):
     write_model('first.gguf')
     write_model('second.gguf')
