@@ -112,14 +112,12 @@ class ModelRuntime:
                 {"role": "user", "content": question}], selected
 
     def stream(self, messages, stop):
-        from llama_cpp import StoppingCriteriaList
         started = time.monotonic()
         events = self.model.create_chat_completion(
             messages=messages, stream=True, max_tokens=self.config["max_tokens"],
-            temperature=self.config["temperature"],
-            stopping_criteria=StoppingCriteriaList([lambda *_: stop.is_set() or time.monotonic() - started > 300]))
+            temperature=self.config["temperature"])
         for item in events:
-            if stop.is_set():
+            if stop.is_set() or time.monotonic() - started > 300:
                 break
             text = item["choices"][0].get("delta", {}).get("content")
             if text:

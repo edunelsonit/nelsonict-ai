@@ -49,6 +49,12 @@ function selectOptions(id, items, placeholder) {
   items.forEach(item => select.add(new Option(item.name, item.id)));
   if (items.some(x => String(x.id) === value)) select.value = value;
 }
+let chatStatusTimer;
+function setChatStatus(message, linger=0) {
+  clearTimeout(chatStatusTimer);
+  $("chat-status").hidden=!message;$("chat-status-text").textContent=message||"";
+  if(linger)chatStatusTimer=setTimeout(()=>{if(!state.busy)setChatStatus("");},linger);
+}
 function showView(view) {
   document.querySelectorAll(".view").forEach(el => el.hidden = el.id !== "view-" + view);
   document.querySelectorAll("[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
@@ -227,8 +233,8 @@ function renderModelResources() {
   for(const option of $("model-file").options) {
     if(!option.value)continue;
     const fit=fresh ? report.models.find(m=>m.filename===option.value) : null;
-    option.disabled=!fit?.allowed;
-    option.textContent=(option.dataset.label || option.value)+(fit && !fit.allowed ? " · unavailable" : "");
+    option.disabled=false;
+    option.textContent=(option.dataset.label || option.value)+(fit && !fit.allowed ? " · exceeds current budget" : "");
   }
   $("model-resource-memory").textContent=report ? "RAM: "+formatMemory(report.ram_available)+" available / "+formatMemory(report.ram_total)+" total. Reserved for other work: "+formatMemory(report.reserve_bytes)+". Model budget: "+formatMemory(report.budget_bytes)+"." : "Available RAM has not been checked for these settings.";
   let text="Select a GGUF file to see its estimated memory use.";
@@ -344,18 +350,22 @@ on("chat-form","submit",async e=>{
   const mode=$("chat-mode").value, kb_id=Number($("chat-kb").value)||null;
   const assistant=state.assistants.find(x=>x.id===Number($("chat-assistant").value));
   if(mode==="documents" && !kb_id && !assistant?.kb_id) throw new Error("Select a knowledge base first.");
-  state.busy=true; $("send").disabled=true; $("stop").hidden=false;
+  state.busy=true; $("chat-form").setAttribute("aria-busy","true");$("send").disabled=true;$("send").textContent="Working…";$("stop").hidden=false;setChatStatus("Sending your request…");
+  let finalStatus="";
   try {
     if(!state.conversation) {
+      setChatStatus("Creating conversation…");
       const created=await api("/conversations",{method:"POST",body:{title:content.slice(0,80),assistant_id:assistant?.id||null}});
       state.conversation=created.id; $("messages").replaceChildren(); $("chat-assistant").disabled=true;
       await refreshLists();
     }
+    setChatStatus("Request received. Waiting for the model…");
     const response=await fetch("/api/conversations/"+state.conversation+"/chat",{
       method:"POST",headers:{"Content-Type":"application/json","X-Nelson-Client":"web","X-CSRF-Token":state.csrf},
       body:JSON.stringify({content,mode,kb_id,task:$("chat-task").value,document_ids:Array.from($("chat-documents").selectedOptions).map(x=>Number(x.value))})
     });
     if(!response.ok) throw new Error(errorText(await response.json()));
+    setChatStatus("Preparing response…");
     $("question").value=""; message("user",content);
     const output=message("assistant",""); const reader=response.body.getReader(), decoder=new TextDecoder();
     let buffer="";
@@ -368,21 +378,25 @@ on("chat-form","submit",async e=>{
         const line=buffer.slice(0,end);buffer=buffer.slice(end+2);
         if(!line.startsWith("data: ")) continue;
         const event=JSON.parse(line.slice(6));
-        if(event.type==="token") output.text.textContent+=event.text;
+        if(event.type==="token") {output.text.textContent+=event.text;setChatStatus("Writing response…");}
         if(event.type==="sources") renderSources(output.article,event.sources);
-        if(event.type==="error") notify(event.message);
-        if(event.type==="queue") $("chat-hint").textContent=event.message;
-        if(event.type==="progress") $("chat-hint").textContent=event.message;
+        if(event.type==="error") {notify(event.message);finalStatus="Response interrupted.";setChatStatus(finalStatus);}
+        if(event.type==="queue" || event.type==="progress") {$("chat-hint").textContent=event.message;setChatStatus(event.message);}
+        if(event.type==="done") finalStatus=event.status==="complete"?"Response complete.":event.status==="cancelled"?"Response stopped.":"Response interrupted.";
       }
       $("messages").scrollTop=$("messages").scrollHeight;
     }
+  } catch(error) {
+    finalStatus="Request failed: "+error.message;setChatStatus(finalStatus);throw error;
   } finally {
-    state.busy=false;$("send").disabled=false;$("stop").hidden=true;
+    state.busy=false;$("chat-form").setAttribute("aria-busy","false");$("send").disabled=false;$("send").textContent="Send ↑";$("stop").hidden=true;
+    $("chat-hint").textContent=mode==="general"?"Answers use the model’s general knowledge.":"Answers use passages from the selected knowledge base.";
+    setChatStatus(finalStatus||"Response complete.",3500);
     if(state.conversation) await openConversation(state.conversation);
   }
 });
 on("stop","click",async()=>{
-  if(state.conversation) await api("/conversations/"+state.conversation+"/stop",{method:"POST"});
+  if(state.conversation) {setChatStatus("Stopping response…");await api("/conversations/"+state.conversation+"/stop",{method:"POST"});}
 });
 on("rename-chat","click",async()=>{
   if(!state.conversation) return;
@@ -395,9 +409,14 @@ on("delete-chat","click",async()=>{
   await api("/conversations/"+state.conversation,{method:"DELETE"});state.conversation=null;
   $("messages").replaceChildren();$("chat-assistant").disabled=false;await refreshLists();
 });
-on("new-kb","click",async()=>{
-  const name=prompt("Knowledge base name"); if(!name?.trim()) return;
-  const k=await api("/knowledge",{method:"POST",body:{name:name.trim()}});await refreshLists();await chooseKnowledge(k.id);
+on("new-kb","click",()=>{
+  $("knowledge-base-form").reset();$("knowledge-base-dialog").showModal();$("knowledge-base-name").focus();
+});
+on("knowledge-base-close","click",()=>$("knowledge-base-dialog").close());
+on("knowledge-base-form","submit",async e=>{
+  e.preventDefault();
+  const k=await api("/knowledge",{method:"POST",body:{name:$("knowledge-base-name").value.trim()}});
+  $("knowledge-base-dialog").close();await refreshLists();await chooseKnowledge(k.id);notify("Knowledge base created.");
 });
 on("delete-kb","click",async()=>{
   if(!state.kb||!confirm("Delete this knowledge base and all its PDFs?")) return;
@@ -581,7 +600,7 @@ on('inspect-model','click',async()=>{
 on('model-import-form','submit',async e=>{
   e.preventDefault();if(modelUpload)return;
   const file=$("model-import-file").files[0];if(!file)return;
-  $("import-model").disabled=true;$("model-upload-progress").value=0;
+  $("import-model").disabled=true;$("model-upload-progress").value=0;$("import-status").textContent='Preparing import…';
   try {
     const result=await new Promise((resolve,reject)=>{
       const xhr=new XMLHttpRequest();modelUpload=xhr;
@@ -590,13 +609,21 @@ on('model-import-form','submit',async e=>{
       xhr.setRequestHeader('X-Filename',encodeURIComponent(file.name));xhr.setRequestHeader('Content-Type','application/octet-stream');
       if($("model-sha").value)xhr.setRequestHeader('X-SHA256',$("model-sha").value.trim());
       xhr.upload.onprogress=event=>{if(event.lengthComputable){const value=Math.round(event.loaded/event.total*100);$("model-upload-progress").value=value;$("import-status").textContent=value===100?'Upload sent. Validating file…':'Uploading '+value+'%';}};
+      xhr.upload.onload=()=>{$("model-upload-progress").value=100;$("import-status").textContent='Upload complete. Saving, checking the checksum, and reading GGUF metadata…';};
       xhr.onerror=()=>reject(new Error('Upload failed. Check the connection and proxy upload limit.'));
       xhr.onabort=()=>reject(new Error('Upload cancelled.'));
       xhr.onload=()=>{let data;try{data=JSON.parse(xhr.responseText);}catch{reject(new Error('Server rejected upload; check proxy limits.'));return;}if(xhr.status>=200&&xhr.status<300)resolve(data);else reject(new Error(errorText(data)));};
       xhr.send(file);
     });
-    $("import-status").textContent='Imported '+result.filename+'. SHA-256: '+result.sha256+(result.checksum_verified?' · matches expected checksum':' · no expected checksum supplied');
-    await refreshModels();await refreshWizard();
+    await refreshModels();$("model-file").value=result.filename;await refreshModelResources();
+    const assessment=selectedModelAssessment();
+    const guidance=assessment?.allowed?'Selected in the model form. Review the settings, then click Load model.':
+      'Installed but cannot load with the current settings. '+(assessment?.reason||'Recheck available RAM.');
+    $("import-status").textContent='Imported '+result.filename+'. SHA-256: '+result.sha256+(result.checksum_verified?' · matches expected checksum. ':' · no expected checksum supplied. ')+guidance;
+    notify('Model imported. '+guidance);await refreshWizard();
+  } catch(error) {
+    $("import-status").textContent='Import failed: '+error.message;
+    throw error;
   } finally {modelUpload=null;$("import-model").disabled=false;}
 });
 on('cancel-import','click',()=>{if(modelUpload)modelUpload.abort();});

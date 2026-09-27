@@ -49,10 +49,10 @@ Version 1.2 was merged into main in [PR #1](https://github.com/edunelsonit/nelso
 ## Included
 
 - Responsive browser interface with light/dark themes; no frontend build or CDN dependency.
-- Administrator and member accounts, Argon2 passwords, HTTP-only sessions, CSRF checks, login throttling.
+- Administrator and member accounts, Argon2 passwords, HTTP-only sessions, CSRF checks, login throttling, and local recovery tokens.
 - Setup wizard with RAM/CPU/GPU/dependency checks and a local model test.
 - Private knowledge bases with explicit reader/editor sharing and personal assistants.
-- GGUF browser import with SHA-256 verification and saved model profiles.
+- GGUF browser import with staged validation, SHA-256 verification, memory guidance, and saved model profiles.
 - Local GGUF loading/unloading, CPU/GPU/context controls, and memory-aware model selection through llama-cpp-python.
 - Streaming responses, stop generation, persistent history, rename, delete, and JSON export.
 - Follow-up questions, full-document summaries, comparisons, and clickable source previews.
@@ -217,7 +217,7 @@ Choose **General chat** to converse without document retrieval. **Stop** ends ge
 
 Create a personal assistant with a name, instructions, and an optional accessible knowledge base. Select the assistant when creating a conversation. Sharing its knowledge base does not share the assistant or conversation.
 
-Administrators add accounts and enable or disable users under **Settings & backup → User accounts**. Knowledge-base owners manage collection sharing separately. To recover a password from the server, use the administration command in [Backup and migration](#backup-and-migration).
+Administrators add accounts, reset passwords, and enable or disable users under **Settings & backup → User accounts**. Knowledge-base owners manage collection sharing separately. If every administrator is locked out, use **Use recovery token** on the sign-in page with the local token described in [Backup and migration](#backup-and-migration).
 
 ## Configuration reference
 
@@ -276,12 +276,12 @@ See [the 1.2 upgrade guide](docs/UPGRADE-1.2.md) for current migration and featu
 
 The operator supplies model files. Choose a model supported by the installed inference version and check its own licence and chat-template requirements.
 
-**Choose model for this system** selects the largest installed GGUF that passes the memory estimate at the suggested context and applies suggested CPU settings to the form. It reduces context only if no file fits. Review the available RAM, estimate and reasons, then click **Load model** to switch. This action does not download files or switch models automatically. Files estimated to exceed available memory cannot be selected or loaded.
+**Choose model for this system** selects the largest installed GGUF that passes the memory estimate at the suggested context and applies suggested CPU settings to the form. It reduces context only if no file fits. Review the available RAM, estimate and reasons, then click **Load model** to switch. This action does not download files or switch models automatically. Files estimated to exceed available memory remain selectable for inspection, but cannot be loaded.
 
 The server checks current memory again for every load, including API requests and startup reloads; saved profiles cannot bypass the check. The estimate includes model weights and context, reserves memory for the operating system and application, and honors container memory limits. It requires enough system RAM even when GPU layers are selected; GPU memory is not added to system RAM. Passing the estimate does not guarantee backend/architecture compatibility, speed, or freedom from out-of-memory errors. If blocked, close other applications, lower context, choose a smaller model, or unload the current model and refresh the assessment. Imports and downloads remain available for storage even when a file is too large to load.
 
 - Only local GGUF files inside NELSON_MODELS_DIR appear in the picker.
-- Administrators can stream-import GGUF files up to NELSON_MAX_MODEL_MB (20,480 MB default). Files are staged, metadata checked, and atomically installed without overwriting an existing filename.
+- Administrators can stream-import GGUF files up to NELSON_MAX_MODEL_MB (20,480 MB default). After upload reaches 100%, the server saves, checks and installs the file before the interface selects it and reports whether it can load. Files are staged, metadata checked, and atomically installed without overwriting an existing filename.
 - Paste a publisher SHA-256 to verify the upload, or calculate a checksum through Inspect file. A checksum does not establish model trustworthiness.
 - Saved profiles retain model filename, context, threads, GPU layers, response tokens, temperature and chat format. Apply a profile to the form, then click Load model.
 - Docker's models mount is now writable for imports. The host directory must permit container UID 10001 to write; copying models manually remains available.
@@ -419,6 +419,18 @@ python -m app.cli reset-password owner
 
 The new password is prompted privately instead of appearing in shell history.
 
+For browser recovery when all administrators are locked out, obtain the local recovery token and enter it with the administrator username and replacement password through **Use recovery token** on the sign-in page:
+
+~~~bash
+python -m app.cli recovery-token
+~~~
+
+The token is stored in `data/recovery-token.txt`, resets the administrator password, re-enables that account, and revokes its sessions. Treat it like a password and rotate it after use:
+
+~~~bash
+python -m app.cli recovery-token --rotate
+~~~
+
 ## Deployment
 
 After dependencies/models are installed, local and LAN operation needs no Internet. Browser assets use no external scripts, fonts, analytics, or AI APIs.
@@ -480,7 +492,8 @@ Open `/docs` on your running instance for the local API reference and `/openapi.
 |---|---|
 | Health and setup | `GET /api/health`, `GET /api/setup`, `POST /api/setup` |
 | Session | `POST /api/login`, `GET /api/me`, `POST /api/logout` |
-| Accounts (admin) | `GET/POST /api/users`, `POST /api/users/{id}/disable`, `POST /api/users/{id}/enable` |
+| Accounts (admin) | `GET/POST /api/users`, `POST /api/users/{id}/disable`, `POST /api/users/{id}/enable`, `POST /api/users/{id}/reset-password` |
+| Administrator recovery | `POST /api/recover` with the local recovery token |
 | Wizard (admin) | `GET /api/system/check`, `POST /api/system/model-test`, `POST /api/system/complete` |
 | Knowledge | `GET/POST /api/knowledge`, `DELETE /api/knowledge/{id}` |
 | Documents | `GET/POST /api/knowledge/{id}/documents`, `GET /api/documents/{id}/download`, `GET /api/documents/{id}/preview`, `POST /api/documents/{id}/reindex`, `DELETE /api/documents/{id}` |
@@ -522,6 +535,7 @@ Use `task: "summary"` or `task: "compare"` for complete analysis. For general ch
 | Model list is empty | Place a `.gguf` file in the configured models directory, or import it as administrator, then refresh. For Docker use the host `./models` bind mount. |
 | GGUF import permission error | Check directory ownership and permissions for the running service. Docker uses UID `10001`; give it write access to the model directory, or copy models manually. |
 | Import rejected / checksum mismatch | Confirm the upload limit, available staging space, expected publisher hash, valid GGUF metadata, and that the destination filename is not already present. Also check the reverse proxy body limit. |
+| Import stays at 100% | The browser upload is complete, but the server is still saving, checking, and installing the GGUF. Wait for the import result; if the filename already exists, select the installed copy instead. |
 | Model blocked by memory estimate | Review the reason in Models. Close other applications, lower context, select a smaller model, or unload the current model and refresh. GPU memory does not increase the system RAM budget. |
 | Model load fails | Read the load error, check inference installation and model compatibility, lower context/GPU settings, and verify available memory. Metadata inspection alone does not prove a file loads. |
 | GPU detected but inference uses CPU | Install a native inference build for that accelerator. The default container is CPU-only; changing the layer count does not change its build. |

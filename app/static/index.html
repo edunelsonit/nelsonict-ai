@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#0b1525">
 <title>Nelsonict AI · Your knowledge, locally</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css"><script defer src="/app.js?v=1.2.2"></script><script defer src="/operations.js"></script><script defer src="/model-downloads.js"></script>
+<link rel="stylesheet" href="/style.css"><script defer src="/app.js?v=1.2.6"></script><script defer src="/operations.js"></script><script defer src="/model-downloads.js"></script>
 </head>
 <body>
 <div id="auth" class="auth-wrap">
@@ -58,7 +58,8 @@
  <button data-prompt="Explain the key ideas step by step.">Help me understand ↗</button>
  <button data-prompt="What practical steps do these documents recommend?">Find practical steps ↗</button></div></div>
  </div>
- <form id="chat-form" class="composer"><textarea id="question" placeholder="Ask Nelsonict AI…" rows="2" maxlength="12000" required aria-label="Your message"></textarea>
+ <form id="chat-form" class="composer" aria-busy="false"><textarea id="question" placeholder="Ask Nelsonict AI…" rows="2" maxlength="12000" required aria-label="Your message"></textarea>
+ <div id="chat-status" class="chat-status" role="status" aria-live="polite" hidden><span class="chat-status-dot" aria-hidden="true"></span><span id="chat-status-text"></span></div>
  <div><small id="chat-hint">Document answers include retrieved passages for you to verify.</small><button type="button" id="stop" hidden>Stop</button><button class="primary" id="send">Send ↑</button></div></form>
  <p class="chat-footnote">AI can make mistakes. Check important answers against the original sources.</p>
  </section>
@@ -140,6 +141,7 @@ https://www.nelsonict.com.ng</textarea></label><button class="primary">Create pu
  </main>
 </div>
 <dialog id="source-preview"><div class="row"><h2 id="preview-title">Source preview</h2><button id="close-preview">Close</button></div><div class="row"><label>Page / source unit<input id="preview-page" type="number" min="1" value="1"></label><button id="preview-go">Go</button><a id="preview-download" class="button">Download original</a></div><div id="preview-content"></div></dialog>
+<dialog id="knowledge-base-dialog"><form id="knowledge-base-form"><div class="row"><h2>New knowledge base</h2><button id="knowledge-base-close" type="button">Close</button></div><label>Name<input id="knowledge-base-name" maxlength="100" required autocomplete="off"></label><button class="primary">Create knowledge base</button></form></dialog>
 <dialog id="reset-password-dialog"><form id="reset-password-form"><div class="row"><h2>Reset password</h2><button id="reset-password-close" type="button">Close</button></div><p id="reset-password-user"></p><label>New password<input id="reset-password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label><label>Confirm new password<input id="reset-password-confirm" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label><button class="primary">Reset password</button></form></dialog>
 <dialog id="migration-dialog"><div class="row"><h2>Restore & review this computer</h2><button id="migration-close">Close</button></div><p>The backup is restored into a separate folder. Current data stays available until both services restart. Model files must be copied separately.</p>
 <form id="migration-upload"><label>Backup ZIP<input id="migration-file" type="file" accept=".zip" required></label><button id="migration-stage" class="primary">Upload & validate backup</button><progress id="migration-progress" max="100" value="0"></progress></form><pre id="migration-review" class="message-text"></pre>

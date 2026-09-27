@@ -1,6 +1,7 @@
 """Memory admission must apply beyond the browser and preserve a running model."""
 import struct
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -151,6 +152,21 @@ def test_direct_runtime_load_used_by_startup_is_guarded(admin, memory, fake_infe
     assert instance.model is None and instance.error
     assert not instance.gate.locked() and not instance.loading
     assert not fake_inference
+
+
+def test_chat_stream_uses_supported_chat_completion_arguments():
+    class ChatModel:
+        def create_chat_completion(self, *, messages, stream, max_tokens, temperature):
+            self.arguments = {"messages": messages, "stream": stream, "max_tokens": max_tokens,
+                              "temperature": temperature}
+            return iter([{"choices": [{"delta": {"content": "Hello"}}]}])
+
+    instance = ModelRuntime()
+    instance.model = ChatModel()
+    instance.config = {"max_tokens": 128, "temperature": 0.4}
+    assert list(instance.stream([{"role": "user", "content": "Hi"}], threading.Event())) == ["Hello"]
+    assert instance.model.arguments == {"messages": [{"role": "user", "content": "Hi"}], "stream": True,
+                                        "max_tokens": 128, "temperature": 0.4}
 
 
 def test_eligible_switch_closes_old_model_only_after_admission(admin, memory, fake_inference):
